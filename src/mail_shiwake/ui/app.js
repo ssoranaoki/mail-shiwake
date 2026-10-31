@@ -90,7 +90,7 @@
     $("learn").disabled = true;
     try {
       const api = window.pywebview.api;
-      $("status").textContent = "振り分け先のフォルダからお手本を覚えています…（はじめはモデルの読み込みに数秒かかります）";
+      $("status").textContent = "振り分け先のフォルダからお手本を覚えています…（モデルの読み込みに数秒、はじめて使うときはモデルのダウンロード（約207MB）に数分かかります）";
       showFolders((await api.learn()).folders);
       $("status").textContent = "Outlook のメールを読んでいます…";
       showMails(await api.mails());

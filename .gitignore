@@ -7,3 +7,8 @@ textbook/
 .yomiyasu/
 # 作るときのメモ（引き継ぎ・発表スライド・見本画像・作業の記録）。_dev/ の中に別の git
 _dev/
+
+# exe を作るときにできるもの
+build/
+dist/
+*.spec
