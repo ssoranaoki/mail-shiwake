@@ -2,7 +2,6 @@
 name = "mail-shiwake"
 version = "0.1.0"
 description = "お手本を数通見せるだけで、メールを話題ごとに振り分ける。メールはパソコンの外に出さない（EmbeddingGemma 2）"
-readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "onnxruntime>=1.31",
