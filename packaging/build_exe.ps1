@@ -12,6 +12,8 @@ uv run --with "pyinstaller>=6.22" pyinstaller --noconfirm --clean --windowed --o
   --add-data "src/mail_shiwake/ui:mail_shiwake/ui" `
   packaging/launcher.py
 Copy-Item LICENSE, README.md dist\mail-shiwake\
+# exe に入れた部品のライセンス文を集める（MIT・BSD・Apache-2.0 などは、一緒に配るときに添える決まりがある）
+uv run python packaging/collect_licenses.py dist/mail-shiwake/THIRD-PARTY-LICENSES
 $zip = "dist\mail-shiwake-$version-windows.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 Compress-Archive -Path dist\mail-shiwake -DestinationPath $zip

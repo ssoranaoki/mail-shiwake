@@ -67,4 +67,6 @@ mail-shiwake
 
 [Apache License 2.0](LICENSE)
 
+Windows 用の exe には、中に入っている部品（onnxruntime・tokenizers・pywebview・Python など）のライセンス文を、`THIRD-PARTY-LICENSES` フォルダに入れています。
+
 モデル EmbeddingGemma 2（[onnx-community/embeddinggemma-2-ONNX](https://huggingface.co/onnx-community/embeddinggemma-2-ONNX)）は、このソフトには含まれていません。はじめて起動したときに Hugging Face からダウンロードします。モデルのライセンスは Apache-2.0 です。
