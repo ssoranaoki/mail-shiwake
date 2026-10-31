@@ -41,8 +41,9 @@ class Api:
     pywebview はメソッドを別のスレッドで動かすので、Outlook（COM）にはそのスレッドの中でつなぐ。
     """
 
-    def __init__(self, store: str | None, folder: str, targets: list[str]) -> None:
+    def __init__(self, store: str | None, folder: str, targets: list[str], reload=None) -> None:
         self._store, self._folder, self._targets = store, folder, targets
+        self._reload = reload  # 設定を読み直す関数。「お手本を覚える」のたびに呼ぶ（設定ファイルを書き換えたときのため）
         self._lock = threading.Lock()
         self._sorter: Sorter | None = None
         self._examples: dict[str, list[tuple[str, str]]] = {}
@@ -65,23 +66,38 @@ class Api:
         return [{"name": f, "count": len(self._examples.get(f, []))} for f in self._targets]
 
     def learn(self) -> dict:
-        """振り分け先のフォルダのメールを、お手本として覚える。フォルダとお手本の数を返す。"""
+        """振り分け先のフォルダのメールを、お手本として覚える。フォルダとお手本の数を返す。
+
+        見つからないフォルダがあれば、覚えずに missing（その名前）と where（作る場所）を返す。画面は「はじめに」の案内を出す。
+        """
+        if self._reload is not None:
+            self._store, self._folder, self._targets = self._reload()
+
         def read_targets(o: OutlookMover):
             missing = o.missing_folders([self._folder, *self._targets], store=self._store)
             if missing:
-                where = f"データファイル「{self._store}」" if self._store else "受信トレイ"
-                raise RuntimeError(f"Outlook の{where}の下に、次のフォルダがありません：{'、'.join(missing)}。"
-                                   f"Outlook でフォルダを作るか、設定ファイル {SETTINGS} を直してください")
-            return {f: [(m.subject, m.body) for m in o.read(f, limit=EXAMPLES_PER_FOLDER, store=self._store)]
-                    for f in self._targets}
+                return missing, {}
+            return [], {f: [(m.subject, m.body) for m in o.read(f, limit=EXAMPLES_PER_FOLDER, store=self._store)]
+                        for f in self._targets}
 
-        examples = self._outlook(read_targets)
+        missing, examples = self._outlook(read_targets)
+        if missing:
+            where = (f"データファイル「{self._store}」の一番上" if self._store
+                     else "受信トレイの下（作れないときは、受信トレイと同じ並び）")
+            return {"folders": [], "missing": missing, "where": where}
         with self._lock:
             self._examples = examples
             if self._sorter is None:
                 self._sorter = Sorter(Embedder())
             self._sorter.learn(self._examples)
             return {"folders": self._folders()}
+
+    def open_settings(self) -> None:
+        """設定ファイルをメモ帳で開く（振り分け先のフォルダの名前を、人が書き換えられるように）。"""
+        import subprocess
+
+        load_settings()  # 無ければ作っておく
+        subprocess.Popen(["notepad.exe", str(SETTINGS)])
 
     def mails(self) -> dict:
         """届いたメールのフォルダを読み、1通ずつ提案を付けて返す（読むだけ）。"""
@@ -148,7 +164,10 @@ def check(api: Api) -> None:
     try:
         # 窓の部品（pywebview が使う pythonnet）も読み込んでおく。.NET が DLL を読めないときはここで分かる
         import clr  # noqa: F401
-        folders = api.learn()["folders"]
+        learned = api.learn()
+        if learned.get("missing"):
+            raise RuntimeError(f"見つからないフォルダが {len(learned['missing'])} 個あります")
+        folders = learned["folders"]
         mails = api.mails()["mails"]
         text = (f"OK お手本 {sum(f['count'] for f in folders)} 通（{len(folders)} フォルダ）、"
                 f"届いたメール {len(mails)} 通、迷っています {sum(m['unsure'] for m in mails)} 通")
@@ -164,7 +183,7 @@ def load_settings() -> dict:
     if not SETTINGS.exists():
         SETTINGS.parent.mkdir(parents=True, exist_ok=True)
         SETTINGS.write_text(json.dumps(DEFAULT_SETTINGS, ensure_ascii=False, indent=2), encoding="utf-8")
-    return {**DEFAULT_SETTINGS, **json.loads(SETTINGS.read_text(encoding="utf-8"))}
+    return {**DEFAULT_SETTINGS, **json.loads(SETTINGS.read_text(encoding="utf-8-sig"))}
 
 
 def main() -> None:
@@ -175,15 +194,19 @@ def main() -> None:
     ap.add_argument("--check", action="store_true",
                     help="窓を開かずに、お手本を覚えてメールを読むところまで確かめ、結果を ~/.mail-shiwake/check.log に書く")
     args = ap.parse_args()
-    s = load_settings()  # コマンドで指定したものは、設定ファイルより優先する
-    store = args.store if args.store is not None else s["store"]
-    folder = args.folder if args.folder is not None else s["folder"]
-    targets = [t.strip() for t in args.targets.split(",")] if args.targets is not None else list(s["targets"])
-    targets = [t for t in targets if t]
+
+    def config():
+        s = load_settings()  # コマンドで指定したものは、設定ファイルより優先する
+        store = args.store if args.store is not None else s["store"]
+        folder = args.folder if args.folder is not None else s["folder"]
+        targets = [t.strip() for t in args.targets.split(",")] if args.targets is not None else list(s["targets"])
+        return store, folder, [t for t in targets if t]
+
+    api = Api(*config(), reload=config)
     if args.check:
-        check(Api(store, folder, targets))
+        check(api)
         return
-    webview.create_window("メール仕分け", html=page(), js_api=Api(store, folder, targets),
+    webview.create_window("メール仕分け", html=page(), js_api=api,
                           width=1180, height=760, min_size=(760, 520))
     webview.start()
 

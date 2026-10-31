@@ -38,8 +38,21 @@ class OutlookReader:
         """"/" で区切ったフォルダの名前をたどる。
 
         store を指定しなければ受信トレイから下を、指定すればその名前のデータファイル（ストア）の一番上から下をたどる。
+        受信トレイの下に無ければ、受信トレイと同じ並び（アカウントの一番上）も探す。
+        IMAP のアカウントには、受信トレイの下にフォルダを作れないものがあるため。
         """
-        f = self.inbox() if store is None else self._store_root(store)
+        if store is not None:
+            return self._walk(self._store_root(store), path)
+        inbox = self.inbox()
+        try:
+            return self._walk(inbox, path)
+        except Exception:  # COM は見つからないとき com_error を出す
+            if not path.strip("/"):
+                raise
+            return self._walk(inbox.Parent, path)  # Folder.Parent: 受信トレイの1つ上のフォルダ
+
+    @staticmethod
+    def _walk(f, path: str):
         for name in [p for p in path.split("/") if p]:
             f = f.Folders.Item(name)
         return f

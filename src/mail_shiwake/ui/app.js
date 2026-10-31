@@ -66,6 +66,30 @@
     }
   }
 
+  // 振り分け先のフォルダが見つからないとき（はじめて起動したときなど）に、何をすればいいかを出す
+  function showGuide(learned) {
+    $("list-title").textContent = "はじめに";
+    $("mails").textContent = "";
+    const box = el("div", "guide");
+    box.append(el("h2", null, "振り分け先のフォルダを用意してください"),
+               el("p", null, "Outlook で、次のフォルダが見つかりませんでした。"));
+    const chips = el("p", "chips");
+    learned.missing.forEach((name) => chips.append(el("span", "chip", name)));
+    const ol = el("ol");
+    [`Outlook で、${learned.where}にこのフォルダを作る`,
+     "それぞれに、お手本になるメールを何通か入れる",
+     "上の「お手本を覚える」を押す"].forEach((t) => ol.append(el("li", null, t)));
+    const sub = el("p", "sub");
+    const open = el("button", "link", "設定ファイルを開く");
+    open.type = "button";
+    open.addEventListener("click", () => window.pywebview.api.open_settings());
+    sub.append("自分のフォルダの名前を使いたいときは、", open,
+               " で targets を書き換えて保存してから、「お手本を覚える」を押します。");
+    box.append(chips, ol, sub);
+    $("status").textContent = "";
+    $("status").append(box);
+  }
+
   async function moveMail(m, folder, li) {
     li.querySelectorAll("button, select").forEach((x) => (x.disabled = true));
     $("status").textContent = `「${m.subject}」を「${folder}」へ移しています…`;
@@ -91,7 +115,13 @@
     try {
       const api = window.pywebview.api;
       $("status").textContent = "振り分け先のフォルダからお手本を覚えています…（モデルの読み込みに数秒、はじめて使うときはモデルのダウンロード（約207MB）に数分かかります）";
-      showFolders((await api.learn()).folders);
+      const learned = await api.learn();
+      showFolders(learned.folders);
+      if (learned.missing && learned.missing.length) {
+        showGuide(learned);
+        return;
+      }
+      $("list-title").textContent = "届いたメール";
       $("status").textContent = "Outlook のメールを読んでいます…";
       showMails(await api.mails());
     } catch (e) {
