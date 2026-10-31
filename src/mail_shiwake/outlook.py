@@ -44,6 +44,16 @@ class OutlookReader:
             f = f.Folders.Item(name)
         return f
 
+    def missing_folders(self, paths: list[str], store: str | None = None) -> list[str]:
+        """paths のうち、Outlook に見つからないフォルダの名前を返す。"""
+        missing = []
+        for p in paths:
+            try:
+                self.folder(p, store)
+            except Exception:  # COM は見つからないとき com_error を出す
+                missing.append(p)
+        return missing
+
     def _store_root(self, name: str):
         for st in self._ns.Stores:
             root = st.GetRootFolder()

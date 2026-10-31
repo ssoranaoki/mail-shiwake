@@ -2,6 +2,7 @@
 name = "mail-shiwake"
 version = "0.1.0"
 description = "お手本を数通見せるだけで、メールを話題ごとに振り分ける。メールはパソコンの外に出さない（EmbeddingGemma 2）"
+readme = "README.md"
 requires-python = ">=3.12"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
@@ -14,6 +15,9 @@ dependencies = [
     # Outlook とつなぐ部分だけが使う（Windows のクラシック版 Outlook 専用）
     "pywin32>=312; sys_platform == 'win32'",
 ]
+
+[project.scripts]
+mail-shiwake = "mail_shiwake.app:main"  # 入れたあと、コマンド mail-shiwake で画面が開く
 
 [build-system]
 requires = ["setuptools>=77"]  # license の SPDX 表記（PEP 639）は 77.0.0 から

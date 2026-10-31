@@ -1,9 +1,10 @@
 """メール仕分けの画面（pywebview の窓）。提案を見て、人が「移す」を押したメールだけを移す。
 
 使い方（Windows、Outlook を開いた状態で）:
-  uv run python -m mail_shiwake.app --store "メール仕分けの試し" --folder "届いたメール"
+  mail-shiwake                     # 設定ファイル ~/.mail-shiwake/settings.json のとおりに開く（無ければ作る）
+  uv run python -m mail_shiwake.app --store "メール仕分けの試し" --folder "届いたメール"   # 試し用（開発）
 
-振り分け先のフォルダ（お手本が入っているフォルダ）は --targets で、カンマ区切りで指定する。
+コマンドで指定したもの（--store・--folder・--targets）は、設定ファイルより優先する。
 
 窓の中身は ui/ の HTML・CSS・JavaScript。JavaScript から下の Api のメソッドを呼ぶ（pywebview の js_api）。
 """
@@ -11,6 +12,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import threading
 from pathlib import Path
 
@@ -21,6 +23,12 @@ from .mover import OutlookMover
 from .sorter import Sorter
 
 UI = Path(__file__).resolve().parent / "ui"
+SETTINGS = Path.home() / ".mail-shiwake" / "settings.json"  # 起動の設定（ダブルクリックで起動するときに使う）
+DEFAULT_SETTINGS = {
+    "store": None,  # 読むデータファイルの名前。null なら受信トレイ
+    "folder": "",  # 届いたメールのフォルダ（"" なら受信トレイそのもの）
+    "targets": ["請求書", "注文", "問い合わせ", "お知らせ"],  # 振り分け先（中のメールがお手本になる）
+}
 EXAMPLES_PER_FOLDER = 50  # フォルダごとに覚えるお手本の数（新しい順）
 UNSURE_GAP = 0.03  # 1位と2位の近さの差がこれより小さいと「迷っています」（練習用の8通で決めた値）
 SNIPPET_CHARS = 60  # カードに出す本文の頭の文字数
@@ -59,6 +67,11 @@ class Api:
     def learn(self) -> dict:
         """振り分け先のフォルダのメールを、お手本として覚える。フォルダとお手本の数を返す。"""
         def read_targets(o: OutlookMover):
+            missing = o.missing_folders([self._folder, *self._targets], store=self._store)
+            if missing:
+                where = f"データファイル「{self._store}」" if self._store else "受信トレイ"
+                raise RuntimeError(f"Outlook の{where}の下に、次のフォルダがありません：{'、'.join(missing)}。"
+                                   f"Outlook でフォルダを作るか、設定ファイル {SETTINGS} を直してください")
             return {f: [(m.subject, m.body) for m in o.read(f, limit=EXAMPLES_PER_FOLDER, store=self._store)]
                     for f in self._targets}
 
@@ -126,14 +139,26 @@ def page() -> str:
     return html.replace("/*STYLE*/", css).replace("/*SCRIPT*/", js)
 
 
+def load_settings() -> dict:
+    """設定ファイルを読む。無ければ、ふつうの設定で作っておく（あとで人が直せるように）。"""
+    if not SETTINGS.exists():
+        SETTINGS.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.write_text(json.dumps(DEFAULT_SETTINGS, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {**DEFAULT_SETTINGS, **json.loads(SETTINGS.read_text(encoding="utf-8"))}
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--store", default=None, help="受信トレイの代わりに読む、データファイル（.pst など）の名前")
-    ap.add_argument("--folder", default="", help='届いたメールのフォルダ（"/" で区切る。空なら一番上か受信トレイ）')
-    ap.add_argument("--targets", default="請求書,注文,問い合わせ,お知らせ",
-                    help="振り分け先のフォルダ（カンマ区切り）。中のメールがお手本になる")
+    ap.add_argument("--folder", default=None, help='届いたメールのフォルダ（"/" で区切る。空なら一番上か受信トレイ）')
+    ap.add_argument("--targets", default=None, help="振り分け先のフォルダ（カンマ区切り）。中のメールがお手本になる")
     args = ap.parse_args()
-    webview.create_window("メール仕分け", html=page(), js_api=Api(args.store, args.folder, [t.strip() for t in args.targets.split(",") if t.strip()]),
+    s = load_settings()  # コマンドで指定したものは、設定ファイルより優先する
+    store = args.store if args.store is not None else s["store"]
+    folder = args.folder if args.folder is not None else s["folder"]
+    targets = [t.strip() for t in args.targets.split(",")] if args.targets is not None else list(s["targets"])
+    targets = [t for t in targets if t]
+    webview.create_window("メール仕分け", html=page(), js_api=Api(store, folder, targets),
                           width=1180, height=760, min_size=(760, 520))
     webview.start()
 
