@@ -50,13 +50,14 @@
       ul.appendChild(li);
     });
     const unsure = data.mails.filter((m) => m.unsure).length;
-    $("status").textContent = `${data.mails.length} 通に提案を付けました。` + (unsure ? `迷っているメールが ${unsure} 通あります。` : "");
+    $("status").textContent = `${data.mails.length} 通に提案を付けました。` + (unsure ? `迷っているメールが ${unsure} 通あります。` : "") +
+      "（「移す」は次の版から使えます）";
   }
 
   async function load() {
-    const api = window.pywebview.api;
     $("learn").disabled = true;
     try {
+      const api = window.pywebview.api;
       $("status").textContent = "お手本を覚えています…（はじめはモデルの読み込みに数秒かかります）";
       showFolders((await api.learn()).folders);
       $("status").textContent = "Outlook のメールを読んでいます…";

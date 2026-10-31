@@ -51,27 +51,35 @@ class Api:
         """Outlook のフォルダのメールを読み、1通ずつ提案を付けて返す（読むだけ）。"""
         import pythoncom  # pywin32。別のスレッドで COM を使う前に初期化する
 
+        if self._sorter is None:
+            raise RuntimeError("先にお手本を覚えてください")
         pythoncom.CoInitialize()
         try:
             reader = OutlookReader()
             mails = reader.read(self._folder, limit=50, store=self._store)
+            del reader  # Outlook の部品は、COM を片づける前に手放す
         finally:
             pythoncom.CoUninitialize()
         with self._lock:
-            if self._sorter is None:
-                raise RuntimeError("先にお手本を覚えてください")
             out = []
             for m in mails:
-                top, second = self._sorter.suggest(m.subject, m.body)[:2]
+                ranked = self._sorter.suggest(m.subject, m.body)
+                top = ranked[0]
+                second = ranked[1] if len(ranked) > 1 else None  # フォルダが1つだけなら迷いようがない
                 out.append({
                     "id": m.entry_id,
                     "subject": m.subject,
-                    "snippet": " ".join(m.body.split())[:SNIPPET_CHARS],
+                    "snippet": snippet(m.body),
                     "folder": top.folder,
-                    "unsure": (top.score - second.score) < UNSURE_GAP,
-                    "second": second.folder,
+                    "unsure": second is not None and (top.score - second.score) < UNSURE_GAP,
+                    "second": second.folder if second else None,
                 })
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ"}
+
+
+def snippet(body: str) -> str:
+    """カードに出す本文の頭（改行や空白はまとめて1つにする）。"""
+    return " ".join(body.split())[:SNIPPET_CHARS]
 
 
 def page() -> str:
