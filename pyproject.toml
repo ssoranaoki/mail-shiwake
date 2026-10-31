@@ -3,6 +3,8 @@ name = "mail-shiwake"
 version = "0.1.0"
 description = "お手本を数通見せるだけで、メールを話題ごとに振り分ける。メールはパソコンの外に出さない（EmbeddingGemma 2）"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = [
     "onnxruntime>=1.31",
     "tokenizers>=0.23",
@@ -14,7 +16,7 @@ dependencies = [
 ]
 
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=77"]  # license の SPDX 表記（PEP 639）は 77.0.0 から
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
