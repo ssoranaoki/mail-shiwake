@@ -146,6 +146,8 @@ def check(api: Api) -> None:
     """
     log = SETTINGS.parent / "check.log"
     try:
+        # 窓の部品（pywebview が使う pythonnet）も読み込んでおく。.NET が DLL を読めないときはここで分かる
+        import clr  # noqa: F401
         folders = api.learn()["folders"]
         mails = api.mails()["mails"]
         text = (f"OK お手本 {sum(f['count'] for f in folders)} 通（{len(folders)} フォルダ）、"

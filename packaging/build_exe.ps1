@@ -12,6 +12,17 @@ uv run --with "pyinstaller>=6.22" pyinstaller --noconfirm --clean --windowed --o
   --add-data "src/mail_shiwake/ui:mail_shiwake/ui" `
   packaging/launcher.py
 Copy-Item LICENSE, README.md dist\mail-shiwake\
+# ブラウザで落とした zip をエクスプローラーで展開すると、中のファイルに「インターネットから来た」印（Mark of the Web）が付き、
+# .NET Framework が窓の部品の Python.Runtime.dll を読まなくなる。exe の隣の設定で、同梱の DLL を読んでよいと伝える
+# （Microsoft の <loadFromRemoteSources> 要素）
+Set-Content -Path dist\mail-shiwake\mail-shiwake.exe.config -Encoding UTF8 -Value @'
+<?xml version="1.0" encoding="utf-8"?>
+<configuration>
+  <runtime>
+    <loadFromRemoteSources enabled="true"/>
+  </runtime>
+</configuration>
+'@
 # exe に入れた部品のライセンス文を集める（MIT・BSD・Apache-2.0 などは、一緒に配るときに添える決まりがある）
 uv run python packaging/collect_licenses.py dist/mail-shiwake/THIRD-PARTY-LICENSES
 $zip = "dist\mail-shiwake-$version-windows.zip"
