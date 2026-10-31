@@ -8,6 +8,8 @@ dependencies = [
     "tokenizers>=0.23",
     "numpy>=2.5",
     "huggingface-hub>=2.4",
+    # Outlook とつなぐ部分だけが使う（Windows のクラシック版 Outlook 専用）
+    "pywin32>=312; sys_platform == 'win32'",
 ]
 
 [build-system]
