@@ -85,6 +85,10 @@ class Api:
             where = (f"データファイル「{self._store}」の一番上" if self._store
                      else "受信トレイの下（作れないときは、受信トレイと同じ並び）")
             return {"folders": [], "missing": missing, "where": where}
+        if not any(examples.values()):  # フォルダはあるが、お手本のメールが1通も無い
+            with self._lock:
+                self._examples = examples
+            return {"folders": self._folders(), "empty": True}
         with self._lock:
             self._examples = examples
             if self._sorter is None:
@@ -167,6 +171,8 @@ def check(api: Api) -> None:
         learned = api.learn()
         if learned.get("missing"):
             raise RuntimeError(f"見つからないフォルダが {len(learned['missing'])} 個あります")
+        if learned.get("empty"):
+            raise RuntimeError("振り分け先のフォルダに、お手本のメールが1通もありません")
         folders = learned["folders"]
         mails = api.mails()["mails"]
         text = (f"OK お手本 {sum(f['count'] for f in folders)} 通（{len(folders)} フォルダ）、"

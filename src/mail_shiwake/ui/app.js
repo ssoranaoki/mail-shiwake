@@ -67,18 +67,23 @@
   }
 
   // 振り分け先のフォルダが見つからないとき（はじめて起動したときなど）に、何をすればいいかを出す
+  // missing（見つからないフォルダ）があればフォルダを作る案内、無ければ（empty）お手本のメールを入れる案内
   function showGuide(learned) {
     $("list-title").textContent = "はじめに";
     $("mails").textContent = "";
     const box = el("div", "guide");
-    box.append(el("h2", null, "振り分け先のフォルダを用意してください"),
-               el("p", null, "Outlook で、次のフォルダが見つかりませんでした。"));
+    const missing = learned.missing && learned.missing.length;
+    box.append(el("h2", null, missing ? "振り分け先のフォルダを用意してください" : "お手本のメールを入れてください"),
+               el("p", null, missing ? "Outlook で、次のフォルダが見つかりませんでした。"
+                                     : "振り分け先のフォルダは見つかりましたが、中にメールが1通もありません。"));
     const chips = el("p", "chips");
-    learned.missing.forEach((name) => chips.append(el("span", "chip", name)));
+    (missing ? learned.missing : learned.folders.map((f) => f.name)).forEach((name) => chips.append(el("span", "chip", name)));
     const ol = el("ol");
-    [`Outlook で、${learned.where}にこのフォルダを作る`,
-     "それぞれに、お手本になるメールを何通か入れる",
-     "上の「お手本を覚える」を押す"].forEach((t) => ol.append(el("li", null, t)));
+    (missing ? [`Outlook で、${learned.where}にこのフォルダを作る`,
+                "それぞれに、お手本になるメールを何通か入れる",
+                "上の「お手本を覚える」を押す"]
+             : ["Outlook で、それぞれのフォルダに、お手本になるメールを何通か入れる（ドラッグで移す）",
+                "上の「お手本を覚える」を押す"]).forEach((t) => ol.append(el("li", null, t)));
     const sub = el("p", "sub");
     const open = el("button", "link", "設定ファイルを開く");
     open.type = "button";
@@ -117,7 +122,7 @@
       $("status").textContent = "振り分け先のフォルダからお手本を覚えています…（モデルの読み込みに数秒、はじめて使うときはモデルのダウンロード（約207MB）に数分かかります）";
       const learned = await api.learn();
       showFolders(learned.folders);
-      if (learned.missing && learned.missing.length) {
+      if ((learned.missing && learned.missing.length) || learned.empty) {
         showGuide(learned);
         return;
       }
