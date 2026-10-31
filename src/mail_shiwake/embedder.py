@@ -16,7 +16,7 @@ from tokenizers import Tokenizer
 
 REPO_ID = "onnx-community/embeddinggemma-2-ONNX"
 # 使うモデルの版（コミット）を固定する。版を固定すると、2回目からは手元のファイルだけを使い、
-# 起動のたびに Hugging Face へ「新しい版がないか」を確かめに行かない（huggingface_hub の local_dir の動き）
+# 起動のたびに Hugging Face へ「新しい版がないか」を確かめに行かない（huggingface_hub の動き）
 REVISION = "daa72c51243991dfcaf9f9137d2c573d8f7790c0"  # 2026-10-31 時点の main
 
 # モデルカードの「使い方の指示（接頭辞）」。config_sentence_transformers.json の prompts と同じ文字列
@@ -27,7 +27,7 @@ PROMPTS = {
     "similarity": "task: sentence similarity | query: ",
 }
 
-# 量子化の種類ごとのファイル名（q4 がいちばん軽い。重み 約174MB＋tokenizer.json 約32MB で合計 約207MB）
+# 量子化の種類ごとのファイル名（この3つでは q4 がいちばん軽い。重み 約174MB＋tokenizer.json 約32MB で合計 約207MB）
 MODEL_FILES = {
     "q4": "onnx/model_q4.onnx",
     "quantized": "onnx/model_quantized.onnx",
@@ -37,8 +37,8 @@ MODEL_FILES = {
 FEATURE_DIM = 512  # 画像・動画・音声の入力欄の幅（モデルの入力の形から）
 
 # モデルの置き場所。Windows・Mac・Linux とも、ホームの下の .mail-shiwake/models
-# Hugging Face の共有の置き場（キャッシュ）は、骨組み（.onnx）と重み（.onnx_data）を別々のフォルダに置く。
-# onnxruntime 1.31 は重みが骨組みと同じフォルダにないと読み込みを断るので、アプリ専用の1つのフォルダへ落とす
+# Hugging Face の共有の置き場（キャッシュ）のまま読むと、onnxruntime 1.31 が「重み（.onnx_data）が
+# モデルのフォルダの外にある」と読み込みを断った（Windows）。アプリ専用の1つのフォルダへ落として並べる
 MODEL_DIR = Path.home() / ".mail-shiwake" / "models" / "embeddinggemma-2-onnx"
 
 
