@@ -12,6 +12,9 @@ from datetime import datetime
 
 OL_FOLDER_INBOX = 6  # OlDefaultFolders.olFolderInbox
 OL_MAIL = 43  # OlObjectClass.olMail（メール以外の会議の招待などは読まない）
+OL_MAIL_ITEM = 0  # OlItemType.olMailItem（Folder.DefaultItemType がこれならメールのフォルダ）
+# OlDefaultFolders: 削除済み 3・送信トレイ 4・送信済み 5・下書き 16・迷惑メール 23（振り分け先にしない）
+OL_SPECIAL_FOLDERS = (3, 4, 5, 16, 23)
 
 
 @dataclass
@@ -74,6 +77,49 @@ class OutlookReader:
             if name in (st.DisplayName, root.Name):
                 return root
         raise LookupError(f"「{name}」という名前のデータファイルが Outlook にありません")
+
+    def mail_folders(self, store: str | None = None, max_depth: int = 3) -> list[dict]:
+        """振り分け先に選べるメールのフォルダの一覧（path・name・depth・count）。
+
+        path は folder() に渡せる形。store を指定しなければ、受信トレイの下と、受信トレイと同じ並びを返す。
+        カレンダー・連絡先などメール以外のフォルダと、送信済み・削除済みなどの決まったフォルダは入れない。
+        """
+        out: list[dict] = []
+
+        def walk(parent, prefix: str, depth: int, skip: set[str]) -> None:
+            for f in parent.Folders:
+                if f.DefaultItemType != OL_MAIL_ITEM or f.EntryID in skip:
+                    continue
+                path = f"{prefix}{f.Name}"
+                out.append({"path": path, "name": f.Name, "depth": depth, "count": f.Items.Count})
+                if depth + 1 < max_depth:
+                    walk(f, path + "/", depth + 1, skip)
+
+        if store is not None:
+            root = self._store_root(store)
+            walk(root, "", 0, self._special_ids(root.Store))
+            return out
+        inbox = self.inbox()
+        skip = self._special_ids(inbox.Store) | {inbox.EntryID}
+        walk(inbox, "", 0, skip)
+        seen = {d["path"] for d in out}
+        before = len(out)
+        walk(inbox.Parent, "", 0, skip)  # 受信トレイと同じ並び（IMAP など）
+        out[before:] = [d for d in out[before:] if d["path"] not in seen]  # 同じ名前なら受信トレイの下を使う（folder() と同じ順）
+        return out
+
+    @staticmethod
+    def _special_ids(store) -> set[str]:
+        """送信済み・削除済みなど、振り分け先にしない決まったフォルダの EntryID。"""
+        ids = set()
+        for t in OL_SPECIAL_FOLDERS:
+            try:
+                f = store.GetDefaultFolder(t)  # そのストアに無い種類は None（または失敗）
+            except Exception:
+                continue
+            if f is not None:
+                ids.add(f.EntryID)
+        return ids
 
     def list_folders(self, path: str = "", store: str | None = None) -> list[str]:
         """そのフォルダのすぐ下にあるフォルダの名前の一覧。"""

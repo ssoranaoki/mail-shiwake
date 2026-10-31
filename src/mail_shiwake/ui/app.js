@@ -1,10 +1,11 @@
 // メール仕分けの画面の動き。Python（app.py の Api）は window.pywebview.api から呼ぶ。
 // pywebview.api は window.onload では間に合わないことがあるので、pywebviewready を待つ（pywebview の資料のとおり）。
 (() => {
-  const COLORS = { "請求書": "#D55E00", "注文": "#0072B2", "問い合わせ": "#009E73", "お知らせ": "#B36B00" };
-  const OTHER = "#5b6670";
+  // フォルダの色は、振り分け先の並び順で決める（どんな名前のフォルダでも色分けされるように）
+  const PALETTE = ["#D55E00", "#0072B2", "#009E73", "#B36B00", "#CC79A7", "#56B4E9", "#7a5195", "#5b6670"];
+  let order = [];
   const $ = (id) => document.getElementById(id);
-  const color = (name) => COLORS[name] || OTHER;
+  const color = (name) => { const i = order.indexOf(name); return i < 0 ? "#5b6670" : PALETTE[i % PALETTE.length]; };
   const ICON_FOLDER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>';
 
   function el(tag, cls, text) {
@@ -15,6 +16,7 @@
   }
 
   function showFolders(folders) {
+    order = folders.map((f) => f.name);
     const ul = $("folders");
     ul.textContent = "";
     folders.forEach((f) => {
@@ -85,11 +87,10 @@
              : ["Outlook で、それぞれのフォルダに、お手本になるメールを何通か入れる（ドラッグで移す）",
                 "上の「お手本を覚える」を押す"]).forEach((t) => ol.append(el("li", null, t)));
     const sub = el("p", "sub");
-    const open = el("button", "link", "設定ファイルを開く");
+    const open = el("button", "link", "振り分け先を選ぶ");
     open.type = "button";
-    open.addEventListener("click", () => window.pywebview.api.open_settings());
-    sub.append("自分のフォルダの名前を使いたいときは、", open,
-               " で targets を書き換えて保存してから、「お手本を覚える」を押します。");
+    open.addEventListener("click", openPicker);
+    sub.append("Outlook にあるほかのフォルダを使いたいときは、", open, " から選べます。");
     box.append(chips, ol, sub);
     $("status").textContent = "";
     $("status").append(box);
@@ -115,8 +116,54 @@
     }
   }
 
+  // 振り分け先を選ぶ窓。Outlook のメールのフォルダをチェックで選び、保存したらお手本を覚え直す
+  async function openPicker() {
+    const dlg = $("picker"), list = $("picker-list");
+    $("picker-msg").textContent = "";
+    list.textContent = "Outlook のフォルダを読んでいます…";
+    $("picker-save").disabled = true;
+    dlg.showModal();
+    try {
+      const data = await window.pywebview.api.folder_choices();
+      list.textContent = "";
+      if (!data.folders.length) {
+        list.textContent = "選べるメールのフォルダがありません。Outlook でフォルダを作ってから、もう一度開いてください。";
+        return;
+      }
+      data.folders.forEach((f) => {
+        const label = el("label", "pick-row");
+        label.style.paddingLeft = `${10 + f.depth * 22}px`;
+        const box = el("input");
+        box.type = "checkbox";
+        box.value = f.path;
+        box.checked = data.selected.includes(f.path);
+        label.append(box, el("span", "name", f.name), el("span", "count", `${f.count} 通`));
+        list.append(label);
+      });
+      $("picker-save").disabled = false;
+    } catch (e) {
+      list.textContent = `フォルダを読めませんでした：${e && e.message ? e.message : e}`;
+    }
+  }
+
+  async function savePicker() {
+    const targets = [...$("picker-list").querySelectorAll("input:checked")].map((b) => b.value);
+    if (targets.length < 2) {
+      $("picker-msg").textContent = "振り分け先は2つ以上選んでください。";
+      return;
+    }
+    try {
+      await window.pywebview.api.save_targets(targets);
+      $("picker").close();
+      load();
+    } catch (e) {
+      $("picker-msg").textContent = `保存できませんでした：${e && e.message ? e.message : e}`;
+    }
+  }
+
   async function load() {
     $("learn").disabled = true;
+    $("choose").disabled = false;
     try {
       const api = window.pywebview.api;
       $("status").textContent = "振り分け先のフォルダからお手本を覚えています…（モデルの読み込みに数秒、はじめて使うときはモデルのダウンロード（約207MB）に数分かかります）";
@@ -137,5 +184,8 @@
   }
 
   $("learn").addEventListener("click", load);
+  $("choose").addEventListener("click", openPicker);
+  $("picker-save").addEventListener("click", savePicker);
+  $("picker-cancel").addEventListener("click", () => $("picker").close());
   window.addEventListener("pywebviewready", load);
 })();

@@ -96,12 +96,23 @@ class Api:
             self._sorter.learn(self._examples)
             return {"folders": self._folders()}
 
-    def open_settings(self) -> None:
-        """設定ファイルをメモ帳で開く（振り分け先のフォルダの名前を、人が書き換えられるように）。"""
-        import subprocess
+    def folder_choices(self) -> dict:
+        """振り分け先に選べるフォルダの一覧と、いま選んでいるもの（画面の「振り分け先を選ぶ」）。"""
+        if self._reload is not None:
+            self._store, self._folder, self._targets = self._reload()
+        folders = self._outlook(lambda o: o.mail_folders(store=self._store))
+        folders = [f for f in folders if f["path"] != self._folder]  # 届いたメールのフォルダは選べない
+        return {"folders": folders, "selected": list(self._targets)}
 
-        load_settings()  # 無ければ作っておく
-        subprocess.Popen(["notepad.exe", str(SETTINGS)])
+    def save_targets(self, targets: list[str]) -> None:
+        """選んだ振り分け先を設定ファイルに書く。このあと画面が「お手本を覚える」を呼ぶ。"""
+        targets = [t for t in targets if t]
+        if len(targets) < 2:
+            raise ValueError("振り分け先は2つ以上選んでください")
+        s = load_settings()
+        s["targets"] = targets
+        SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._targets = targets
 
     def mails(self) -> dict:
         """届いたメールのフォルダを読み、1通ずつ提案を付けて返す（読むだけ）。"""

@@ -15,6 +15,9 @@
     <button type="button" id="learn" class="primary" disabled>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>お手本を覚える
     </button>
+    <button type="button" id="choose" class="secondary" disabled>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>振り分け先を選ぶ
+    </button>
     <span class="offline"><span class="dot"></span>オフラインで動作中</span>
   </div>
 </header>
@@ -29,6 +32,16 @@
     <ul id="mails" class="mails"></ul>
   </section>
 </div>
+<dialog id="picker" aria-labelledby="picker-title">
+  <h2 id="picker-title">振り分け先を選ぶ</h2>
+  <p class="hint">振り分け先にするフォルダにチェックを付けてください（2つ以上）。フォルダの中のメールがお手本になります。</p>
+  <div id="picker-list" class="picker-list">読み込み中…</div>
+  <p id="picker-msg" class="picker-msg" role="status"></p>
+  <div class="picker-actions">
+    <button type="button" id="picker-cancel" class="plain">やめる</button>
+    <button type="button" id="picker-save" class="primary">保存して覚える</button>
+  </div>
+</dialog>
 <script>/*SCRIPT*/</script>
 </body>
 </html>
