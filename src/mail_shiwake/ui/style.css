@@ -38,10 +38,11 @@ button { font: inherit; cursor: pointer; }
 .snippet { margin: 0; color: var(--soft); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .right { display: flex; align-items: center; gap: 10px; }
 .suggest { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
-.chip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 12px; background: var(--panel); white-space: nowrap; }
+.pick { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--panel); color: var(--ink); }
+.card.rechosen { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .unsure { font-size: .82rem; color: var(--warn); background: var(--warn-soft); border-radius: 6px; padding: 1px 8px; white-space: nowrap; }
-.move { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 16px; }
-.move:disabled { color: #9aa5b1; cursor: not-allowed; }
+.move { border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 700; border-radius: 8px; padding: 7px 18px; }
+.move:disabled, .pick:disabled { opacity: .5; cursor: default; }
 
 @media (max-width: 900px) {
   .main { grid-template-columns: 1fr; }

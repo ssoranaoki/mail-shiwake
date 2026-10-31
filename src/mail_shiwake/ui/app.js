@@ -39,26 +39,53 @@
       text.append(el("p", "subject", m.subject || "（件名なし）"), el("p", "snippet", m.snippet));
       const right = el("div", "right");
       const sug = el("div", "suggest");
-      sug.append(el("span", "chip", `→ ${m.folder}`));
+      // 提案のフォルダを最初に選んでおき、違っていたら人が選び直す
+      const pick = el("select", "pick");
+      pick.setAttribute("aria-label", `「${m.subject}」を移す先のフォルダ`);
+      data.targets.forEach((f) => pick.add(new Option(`→ ${f}`, f, f === m.folder, f === m.folder)));
+      pick.addEventListener("change", () => {
+        const changed = pick.value !== m.folder;
+        li.classList.toggle("rechosen", changed);
+        av.textContent = pick.value.slice(0, 1);
+        av.style.background = color(pick.value);
+      });
+      sug.append(pick);
       if (m.unsure) sug.append(el("span", "unsure", `迷っています：${m.second} かも`));
       const move = el("button", "move", "移す");
       move.type = "button";
-      move.disabled = true; // 3番では押せない（移すのは4番で作る）
-      move.title = "移すのは、次の版で使えるようになります";
+      move.addEventListener("click", () => moveMail(m, pick.value, li));
       right.append(sug, move);
       li.append(av, text, right);
       ul.appendChild(li);
     });
     const unsure = data.mails.filter((m) => m.unsure).length;
-    $("status").textContent = `${data.mails.length} 通に提案を付けました。` + (unsure ? `迷っているメールが ${unsure} 通あります。` : "") +
-      "（「移す」は次の版から使えます）";
+    if (!data.moved) {
+      $("status").textContent = data.mails.length
+        ? `${data.mails.length} 通に提案を付けました。` + (unsure ? `迷っているメールが ${unsure} 通あります。` : "") + "違っていたら、フォルダを選び直してから「移す」を押してください。"
+        : "届いたメールはありません。";
+    }
+  }
+
+  async function moveMail(m, folder, li) {
+    li.querySelectorAll("button, select").forEach((x) => (x.disabled = true));
+    $("status").textContent = `「${m.subject}」を「${folder}」へ移しています…`;
+    try {
+      const data = await window.pywebview.api.move(m.id, folder);
+      showFolders(data.folders);
+      showMails(data);
+      const again = folder !== m.folder ? "（選び直したフォルダです）" : "";
+      $("status").textContent = `「${data.moved.subject}」を「${data.moved.folder}」へ移しました${again}。このメールも、これからはお手本になります。`;
+    } catch (e) {
+      li.querySelectorAll("button, select").forEach((x) => (x.disabled = false));
+      $("status").textContent = `移せませんでした：${e && e.message ? e.message : e}`;
+    }
   }
 
   async function load() {
     $("learn").disabled = true;
     try {
       const api = window.pywebview.api;
-      $("status").textContent = "お手本を覚えています…（はじめはモデルの読み込みに数秒かかります）";
+      $("status").textContent = "振り分け先のフォルダからお手本を覚えています…（はじめはモデルの読み込みに数秒かかります）";
       showFolders((await api.learn()).folders);
       $("status").textContent = "Outlook のメールを読んでいます…";
       showMails(await api.mails());
