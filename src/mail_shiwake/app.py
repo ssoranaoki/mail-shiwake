@@ -18,9 +18,12 @@ from pathlib import Path
 
 import webview
 
+import numpy as np
+
 from .embedder import Embedder
+from .importance import MIN_FLAGGED, Importance
 from .mover import OutlookMover
-from .sorter import Sorter
+from .sorter import Sorter, mail_text
 
 UI = Path(__file__).resolve().parent / "ui"
 SETTINGS = Path.home() / ".mail-shiwake" / "settings.json"  # 起動の設定（ダブルクリックで起動するときに使う）
@@ -30,6 +33,8 @@ DEFAULT_SETTINGS = {
     "targets": ["請求書", "注文", "問い合わせ", "お知らせ"],  # 振り分け先（中のメールがお手本になる）
 }
 EXAMPLES_PER_FOLDER = 50  # フォルダごとに覚えるお手本の数（新しい順）
+FLAG_SCAN = 300  # 旗付きのお手本を探すとき、フォルダごとに見る新しいメールの数
+FLAGGED_EXAMPLES = 50  # 「大事」のお手本にする旗付きメールの数（新しい順）
 UNSURE_GAP = 0.03  # 1位と2位の近さの差がこれより小さいと「迷っています」（練習用の8通で決めた値）
 SNIPPET_CHARS = 60  # カードに出す本文の頭の文字数
 
@@ -47,7 +52,10 @@ class Api:
         self._lock = threading.Lock()
         self._sorter: Sorter | None = None
         self._examples: dict[str, list[tuple[str, str]]] = {}
-        self._last: dict[str, tuple[str, str]] = {}  # 最後に読んだ届いたメール（EntryID → 件名・本文）
+        self._last: dict[str, tuple[str, str, bool]] = {}  # 最後に読んだ届いたメール（EntryID → 件名・本文・旗）
+        self._flags: dict[str, list[bool]] = {}  # 振り分け先のお手本ごとの旗（_examples と同じ並び）
+        self._flagged_vectors = np.zeros((0, 768), dtype=np.float32)  # 旗付きメール（大事のお手本）の数字の列
+        self._importance: Importance | None = None
 
     def _outlook(self, work):
         """このスレッドで COM を準備して Outlook につなぎ、work(つないだ窓口) の結果を返す。"""
@@ -77,24 +85,40 @@ class Api:
             missing = o.missing_folders([self._folder, *self._targets], store=self._store)
             if missing:
                 return missing, {}
-            return [], {f: [(m.subject, m.body) for m in o.read(f, limit=EXAMPLES_PER_FOLDER, store=self._store)]
-                        for f in self._targets}
+            read = {f: o.read(f, limit=EXAMPLES_PER_FOLDER, store=self._store) for f in self._targets}
+            flagged = o.flagged([self._folder, *self._targets], scan=FLAG_SCAN, limit=FLAGGED_EXAMPLES,
+                                store=self._store)
+            return [], (read, flagged)
 
-        missing, examples = self._outlook(read_targets)
+        missing, got = self._outlook(read_targets)
         if missing:
             where = (f"データファイル「{self._store}」の一番上" if self._store
                      else "受信トレイの下（作れないときは、受信トレイと同じ並び）")
             return {"folders": [], "missing": missing, "where": where}
+        read, flagged = got
+        examples = {f: [(m.subject, m.body) for m in ms] for f, ms in read.items()}
         if not any(examples.values()):  # フォルダはあるが、お手本のメールが1通も無い
             with self._lock:
                 self._examples = examples
             return {"folders": self._folders(), "empty": True}
         with self._lock:
             self._examples = examples
+            self._flags = {f: [m.flagged for m in ms] for f, ms in read.items()}
             if self._sorter is None:
                 self._sorter = Sorter(Embedder())
             self._sorter.learn(self._examples)
-            return {"folders": self._folders()}
+            self._flagged_vectors = (self._sorter.embedder.embed([mail_text(m.subject, m.body) for m in flagged],
+                                                                 prompt="classification")
+                                     if flagged else np.zeros((0, 768), dtype=np.float32))
+            self._build_importance()
+            return {"folders": self._folders(), "flagged": len(flagged), "minFlagged": MIN_FLAGGED}
+
+    def _build_importance(self) -> None:
+        """大事の見分けを作り直す。「ふつう」は振り分け先の旗の無いお手本（振り分けで計算した数字の列を使い回す）。"""
+        normal = [v for f, vecs in zip(self._sorter.folders, self._sorter.example_vectors)
+                  for v, fl in zip(vecs, self._flags.get(f, [])) if not fl]
+        imp = Importance(self._flagged_vectors, np.array(normal) if normal else np.zeros((0, 768), dtype=np.float32))
+        self._importance = imp if imp.ready else None
 
     def folder_choices(self) -> dict:
         """振り分け先に選べるフォルダの一覧と、いま選んでいるもの（画面の「振り分け先を選ぶ」）。"""
@@ -120,10 +144,11 @@ class Api:
             raise RuntimeError("先にお手本を覚えてください")
         mails = self._outlook(lambda o: o.read(self._folder, limit=50, store=self._store))
         with self._lock:
-            self._last = {m.entry_id: (m.subject, m.body) for m in mails}
+            self._last = {m.entry_id: (m.subject, m.body, m.flagged) for m in mails}
             out = []
             for m in mails:
-                ranked = self._sorter.suggest(m.subject, m.body)
+                vec = self._sorter.vector(m.subject, m.body)
+                ranked = self._sorter.rank(vec)
                 top = ranked[0]
                 second = ranked[1] if len(ranked) > 1 else None  # フォルダが1つだけなら迷いようがない
                 out.append({
@@ -133,6 +158,9 @@ class Api:
                     "folder": top.folder,
                     "unsure": second is not None and (top.score - second.score) < UNSURE_GAP,
                     "second": second.folder if second else None,
+                    # 旗がまだ無く、「ふつう」より「大事」のお手本に、迷いの幅以上近いときだけ印を付ける
+                    "important": (not m.flagged and self._importance is not None
+                                  and self._importance.score(vec) >= UNSURE_GAP),
                 })
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ",
                 "targets": self._targets}
@@ -144,10 +172,12 @@ class Api:
         if entry_id not in self._last:
             raise LookupError("そのメールは、いまの一覧にありません")
         self._outlook(lambda o: o.move(entry_id, folder, store=self._store))
-        subject, body = self._last.pop(entry_id)
+        subject, body, flagged = self._last.pop(entry_id)
         with self._lock:
             self._examples.setdefault(folder, []).append((subject, body))
+            self._flags.setdefault(folder, []).append(flagged)
             self._sorter.learn(self._examples)  # 選び直したメールも、ここで新しいお手本になる
+            self._build_importance()
         moved = {"subject": subject, "folder": folder}
         try:
             result = self.mails()  # 残りのメールの提案を出し直す
@@ -187,7 +217,8 @@ def check(api: Api) -> None:
         folders = learned["folders"]
         mails = api.mails()["mails"]
         text = (f"OK お手本 {sum(f['count'] for f in folders)} 通（{len(folders)} フォルダ）、"
-                f"届いたメール {len(mails)} 通、迷っています {sum(m['unsure'] for m in mails)} 通")
+                f"届いたメール {len(mails)} 通、迷っています {sum(m['unsure'] for m in mails)} 通、"
+                f"旗 {learned['flagged']} 通、大事かも {sum(m['important'] for m in mails)} 通")
     except Exception as e:
         text = f"NG {type(e).__name__}: {e}"
     log.parent.mkdir(parents=True, exist_ok=True)

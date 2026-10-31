@@ -45,11 +45,19 @@ class Sorter:
             self.example_vectors.append(vectors)
             self.example_subjects.append([s for s, _ in mails])
 
+    def vector(self, subject: str, body: str) -> np.ndarray:
+        """1通のメールを数字の列にする（振り分けと大事の見分けで、同じものを使い回す）。"""
+        (vec,) = self.embedder.embed([mail_text(subject, body)], prompt="classification")
+        return vec
+
     def suggest(self, subject: str, body: str) -> list[Suggestion]:
         """1通のメールについて、フォルダを近い順に並べて返す。"""
+        return self.rank(self.vector(subject, body))
+
+    def rank(self, vec: np.ndarray) -> list[Suggestion]:
+        """数字の列にしたメールについて、フォルダを近い順に並べて返す。"""
         if not self.folders:
             raise RuntimeError("先に learn() でお手本を覚えてください")
-        (vec,) = self.embedder.embed([mail_text(subject, body)], prompt="classification")
         results = []
         for folder, vectors, subjects in zip(self.folders, self.example_vectors, self.example_subjects):
             sims = vectors @ vec  # 長さ1にそろえてあるので、内積 = コサイン類似度

@@ -65,6 +65,9 @@ dialog .hint { margin: 0 0 12px; color: var(--soft); font-size: .9rem; }
 .picker-msg { min-height: 1.2em; margin: 8px 0 0; color: var(--warn); font-size: .9rem; }
 .picker-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; }
 .plain { border: 1px solid var(--line); background: var(--panel); border-radius: 8px; padding: 7px 16px; }
+.important { display: inline-block; margin-right: 8px; font-size: .78rem; font-weight: 700; color: #b3261e; background: #fdecea; border: 1px solid #f3c2bd; border-radius: 6px; padding: 0 7px; vertical-align: 1px; }
+.card.is-important { border-left: 4px solid #b3261e; }
+.flag-note { display: block; margin-top: 4px; color: var(--warn); }
 
 @media (max-width: 900px) {
   .main { grid-template-columns: 1fr; }

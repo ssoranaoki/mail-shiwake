@@ -23,6 +23,7 @@ class Mail:
     subject: str
     body: str
     received: datetime | None
+    flagged: bool = False  # 旗（フラグ）が付いているか（MailItem.IsMarkedAsTask）
 
 
 class OutlookReader:
@@ -135,9 +136,27 @@ class OutlookReader:
                 break
             if item.Class != OL_MAIL:
                 continue
-            received = item.ReceivedTime
-            # 送っていない下書きは、受け取った日時が 4501年1月1日（日時なしの印）になる
-            if not isinstance(received, datetime) or received.year >= 4500:
-                received = None
-            mails.append(Mail(item.EntryID, item.Subject or "", item.Body or "", received))
+            mails.append(self._mail(item))
         return mails
+
+    def flagged(self, paths: list[str], scan: int = 300, limit: int = 50, store: str | None = None) -> list[Mail]:
+        """フォルダの新しいメール scan 通ずつから、旗の付いたものを集め、新しい順に最大 limit 通返す。"""
+        found: list[Mail] = []
+        for p in paths:
+            items = self.folder(p, store).Items
+            items.Sort("[ReceivedTime]", True)
+            for n, item in enumerate(items):
+                if n >= scan:
+                    break
+                if item.Class == OL_MAIL and item.IsMarkedAsTask:
+                    found.append(self._mail(item))
+        found.sort(key=lambda m: m.received.timestamp() if m.received else 0.0, reverse=True)
+        return found[:limit]
+
+    @staticmethod
+    def _mail(item) -> Mail:
+        received = item.ReceivedTime
+        # 送っていない下書きは、受け取った日時が 4501年1月1日（日時なしの印）になる
+        if not isinstance(received, datetime) or received.year >= 4500:
+            received = None
+        return Mail(item.EntryID, item.Subject or "", item.Body or "", received, bool(item.IsMarkedAsTask))

@@ -4,6 +4,7 @@
   // フォルダの色は、振り分け先の並び順で決める（どんな名前のフォルダでも色分けされるように）
   const PALETTE = ["#D55E00", "#0072B2", "#009E73", "#B36B00", "#CC79A7", "#56B4E9", "#7a5195", "#5b6670"];
   let order = [];
+  let flagNote = ""; // 旗付きのお手本が足りないときの案内
   const $ = (id) => document.getElementById(id);
   const color = (name) => { const i = order.indexOf(name); return i < 0 ? "#5b6670" : PALETTE[i % PALETTE.length]; };
   const ICON_FOLDER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>';
@@ -38,7 +39,11 @@
       av.style.background = color(m.folder);
       av.setAttribute("aria-hidden", "true");
       const text = el("div", "text");
-      text.append(el("p", "subject", m.subject || "（件名なし）"), el("p", "snippet", m.snippet));
+      const subj = el("p", "subject");
+      if (m.important) subj.append(el("span", "important", "★ 大事かも"));
+      subj.append(m.subject || "（件名なし）");
+      text.append(subj, el("p", "snippet", m.snippet));
+      if (m.important) li.classList.add("is-important");
       const right = el("div", "right");
       const sug = el("div", "suggest");
       // 提案のフォルダを最初に選んでおき、違っていたら人が選び直す
@@ -61,10 +66,13 @@
       ul.appendChild(li);
     });
     const unsure = data.mails.filter((m) => m.unsure).length;
+    const important = data.mails.filter((m) => m.important).length;
     if (!data.moved) {
       $("status").textContent = data.mails.length
-        ? `${data.mails.length} 通に提案を付けました。` + (unsure ? `迷っているメールが ${unsure} 通あります。` : "") + "違っていたら、フォルダを選び直してから「移す」を押してください。"
+        ? `${data.mails.length} 通に提案を付けました。` + (important ? `大事かもしれないメールが ${important} 通あります。` : "")
+          + (unsure ? `迷っているメールが ${unsure} 通あります。` : "") + "違っていたら、フォルダを選び直してから「移す」を押してください。"
         : "届いたメールはありません。";
+      if (flagNote) $("status").append(el("span", "flag-note", flagNote));
     }
   }
 
@@ -174,6 +182,9 @@
         return;
       }
       $("list-title").textContent = "届いたメール";
+      flagNote = learned.flagged < learned.minFlagged
+        ? `大事なメールの見分け：Outlook で大事なメールに旗を付けてください（いま ${learned.flagged} 通。${learned.minFlagged} 通以上で「★ 大事かも」の印が付きます）。`
+        : "";
       $("status").textContent = "Outlook のメールを読んでいます…";
       showMails(await api.mails());
     } catch (e) {
