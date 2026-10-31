@@ -139,6 +139,24 @@ def page() -> str:
     return html.replace("/*STYLE*/", css).replace("/*SCRIPT*/", js)
 
 
+def check(api: Api) -> None:
+    """窓を開かずに、画面が最初にすること（お手本を覚える・メールを読む）を試し、件数だけをファイルに書く。
+
+    exe でだけ起きる問題（入っていない部品など）を、人が窓を見なくても見つけるためのもの。件名や本文は書かない。
+    """
+    log = SETTINGS.parent / "check.log"
+    try:
+        folders = api.learn()["folders"]
+        mails = api.mails()["mails"]
+        text = (f"OK お手本 {sum(f['count'] for f in folders)} 通（{len(folders)} フォルダ）、"
+                f"届いたメール {len(mails)} 通、迷っています {sum(m['unsure'] for m in mails)} 通")
+    except Exception as e:
+        text = f"NG {type(e).__name__}: {e}"
+    log.parent.mkdir(parents=True, exist_ok=True)
+    log.write_text(text + "\n", encoding="utf-8")
+    print(text)
+
+
 def load_settings() -> dict:
     """設定ファイルを読む。無ければ、ふつうの設定で作っておく（あとで人が直せるように）。"""
     if not SETTINGS.exists():
@@ -152,12 +170,17 @@ def main() -> None:
     ap.add_argument("--store", default=None, help="受信トレイの代わりに読む、データファイル（.pst など）の名前")
     ap.add_argument("--folder", default=None, help='届いたメールのフォルダ（"/" で区切る。空なら一番上か受信トレイ）')
     ap.add_argument("--targets", default=None, help="振り分け先のフォルダ（カンマ区切り）。中のメールがお手本になる")
+    ap.add_argument("--check", action="store_true",
+                    help="窓を開かずに、お手本を覚えてメールを読むところまで確かめ、結果を ~/.mail-shiwake/check.log に書く")
     args = ap.parse_args()
     s = load_settings()  # コマンドで指定したものは、設定ファイルより優先する
     store = args.store if args.store is not None else s["store"]
     folder = args.folder if args.folder is not None else s["folder"]
     targets = [t.strip() for t in args.targets.split(",")] if args.targets is not None else list(s["targets"])
     targets = [t for t in targets if t]
+    if args.check:
+        check(Api(store, folder, targets))
+        return
     webview.create_window("メール仕分け", html=page(), js_api=Api(store, folder, targets),
                           width=1180, height=760, min_size=(760, 520))
     webview.start()
