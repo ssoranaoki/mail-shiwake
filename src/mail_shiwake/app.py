@@ -104,8 +104,12 @@ class Api:
         with self._lock:
             self._examples.setdefault(folder, []).append((subject, body))
             self._sorter.learn(self._examples)  # 選び直したメールも、ここで新しいお手本になる
-        result = self.mails()
-        result.update({"moved": {"subject": subject, "folder": folder}, "folders": self._folders()})
+        moved = {"subject": subject, "folder": folder}
+        try:
+            result = self.mails()  # 残りのメールの提案を出し直す
+        except Exception as e:  # 移すのはできたので、一覧の読み直しの失敗とは分けて知らせる
+            return {"moved": moved, "folders": self._folders(), "listError": str(e)}
+        result.update({"moved": moved, "folders": self._folders()})
         return result
 
 

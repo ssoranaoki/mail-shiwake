@@ -72,6 +72,11 @@
     try {
       const data = await window.pywebview.api.move(m.id, folder);
       showFolders(data.folders);
+      if (data.listError) {
+        li.remove(); // 移すのはできている。一覧の読み直しだけ失敗した
+        $("status").textContent = `「${data.moved.subject}」を「${data.moved.folder}」へ移しました。ただ、残りのメールの読み直しに失敗しました（${data.listError}）。「お手本を覚える」を押して読み直してください。`;
+        return;
+      }
       showMails(data);
       const again = folder !== m.folder ? "（選び直したフォルダです）" : "";
       $("status").textContent = `「${data.moved.subject}」を「${data.moved.folder}」へ移しました${again}。このメールも、これからはお手本になります。`;

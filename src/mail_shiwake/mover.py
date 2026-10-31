@@ -13,7 +13,7 @@ class OutlookMover(OutlookReader):
     def move(self, entry_id: str, dest_path: str, store: str | None = None) -> str:
         """EntryID のメールを、dest_path のフォルダへ移す。移した先のフォルダの名前を返す。"""
         dest = self.folder(dest_path, store)
-        # メールを ID で取り出す。データファイルが違うと見つからないので、移す先と同じデータファイルの ID を渡す
+        # メールを ID で取り出す。公式資料では、ふつうデータファイルの印（StoreID）も渡す。届いたメールと移す先は同じデータファイル
         item = self._ns.GetItemFromID(entry_id, dest.StoreID)
         if item.Class != OL_MAIL:
             raise ValueError("メールではないものは移しません")
