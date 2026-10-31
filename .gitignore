@@ -1,0 +1,9 @@
+__pycache__/
+*.egg-info/
+.venv/
+
+# WEB教科書は学習用の別リポジトリ（textbook/ の中に独自の git）。OSS の配布物には含めない
+textbook/
+.yomiyasu/
+# 作るときのメモ（引き継ぎ・発表スライド・見本画像・作業の記録）。_dev/ の中に別の git
+_dev/
