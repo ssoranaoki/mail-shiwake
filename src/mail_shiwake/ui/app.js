@@ -58,23 +58,45 @@
     });
   }
 
-  function showMails(data) {
+  // 一覧を出し直しても、人が選んだ状態を残す（2026-11-01 ユーザー選択 A）
+  // kept: 外したチェック・選び直したフォルダ（EntryID → { off, folder }）、bulkOff: 配信メールの箱で外したチェック
+  const kept = new Map();
+  const bulkOff = new Set();
+  const bulkUi = { folder: "", open: false }; // 配信メールの箱で選んだ移す先・開いていたか
+  let shownIds = null; // 前に出した一覧の EntryID
+  let fresh = new Set(); // 新しく届いたメール（「新着」の印）
+  const keep = (id, patch) => {
+    const st = { off: false, folder: null, ...(kept.get(id) || {}), ...patch };
+    if (st.off || st.folder) kept.set(id, st); else kept.delete(id);
+  };
+
+  // arrived: 新しく届いたかを見る読み直し（新着の見張り・読み直しの間隔・お手本を覚える）。移したあとの出し直しは false
+  function showMails(data, arrived = false) {
+    const ids = new Set(data.mails.map((m) => m.id));
+    if (arrived && shownIds) fresh = new Set([...ids].filter((i) => !shownIds.has(i)));
+    else fresh = new Set([...fresh].filter((i) => ids.has(i)));
+    shownIds = ids;
+    [...kept.keys()].forEach((i) => { if (!ids.has(i)) kept.delete(i); });
+    [...bulkOff].forEach((i) => { if (!ids.has(i)) bulkOff.delete(i); });
     $("list-title").textContent = `届いたメール（${data.source} ／ ${data.folderName}）`;
     const ul = $("mails");
     ul.textContent = "";
-    const main = data.mails.filter((m) => m.group !== "bulk");
+    // 新着を上に（それ以外は届いた順のまま）
+    const main = data.mails.filter((m) => m.group !== "bulk").sort((a, b) => fresh.has(b.id) - fresh.has(a.id));
     const bulk = data.mails.filter((m) => m.group === "bulk");
     const checks = []; // まとめて移すメール（チェック欄と、そのカードの移す先）
     main.forEach((m) => {
       const li = el("li", "card with-check");
+      li.dataset.id = m.id;
+      const st = kept.get(m.id) || {};
       // 迷っていないメールにだけチェック欄を付ける（迷っている・大事かもは1通ずつ確かめる）
       const cell = el("div", "check");
       if (m.autoMove) {
         const cb = el("input");
         cb.type = "checkbox";
-        cb.checked = true;
+        cb.checked = !st.off;
         cb.setAttribute("aria-label", `「${m.subject}」をまとめて移す`);
-        cb.addEventListener("change", updateMany);
+        cb.addEventListener("change", () => { keep(m.id, { off: !cb.checked }); updateMany(); });
         cell.append(cb);
         checks.push({ cb, m, li, pickOf: () => li.querySelector("select").value });
       }
@@ -83,6 +105,7 @@
       av.setAttribute("aria-hidden", "true");
       const text = el("div", "text");
       const subj = el("p", "subject");
+      if (fresh.has(m.id)) { subj.append(el("span", "fresh", "新着")); li.classList.add("is-new"); }
       if (m.important) subj.append(el("span", "important", "★ 大事かも"));
       // 件名を押すと、Outlook でそのメールを開く（中身を読んでから判断できるように）
       const title = el("button", "subject-link", m.subject || "（件名なし）");
@@ -98,12 +121,15 @@
       const pick = el("select", "pick");
       pick.setAttribute("aria-label", `「${m.subject}」を移す先のフォルダ`);
       data.targets.forEach((f) => pick.add(new Option(`→ ${f}`, f, f === m.folder, f === m.folder)));
-      pick.addEventListener("change", () => {
+      const showPick = () => {
         const changed = pick.value !== m.folder;
         li.classList.toggle("rechosen", changed);
         av.textContent = pick.value.slice(0, 1);
         av.style.background = color(pick.value);
-      });
+        return changed;
+      };
+      if (st.folder && data.targets.includes(st.folder)) { pick.value = st.folder; showPick(); }
+      pick.addEventListener("change", () => keep(m.id, { folder: showPick() ? pick.value : null }));
       sug.append(pick);
       if (m.unsure) {
         sug.append(el("span", "unsure", `迷っています：${m.second} かも`));
@@ -139,7 +165,7 @@
     const important = main.filter((m) => m.important).length;
     if (!data.moved && !data.bulkMoved && !data.manyMoved) {
       $("status").textContent = data.mails.length
-        ? `${main.length} 通に提案を付けました。` + (important ? `大事かもしれないメールが ${important} 通あります。` : "")
+        ? (fresh.size ? `新しく届いたメール ${fresh.size} 通を上に出しました。` : "") + `${main.length} 通に提案を付けました。` + (important ? `大事かもしれないメールが ${important} 通あります。` : "")
           + (unsure ? `迷っているメールが ${unsure} 通あります。` : "")
           + (bulk.length ? `配信メール ${bulk.length} 通は、下にまとめました。` : "")
           + "違っていたら、フォルダを選び直してから「移す」を押してください。"
@@ -164,7 +190,8 @@
     go.type = "button";
     go.disabled = true;
     const fill = (list) => {
-      list.forEach((f) => pick.add(new Option(`→ ${f.path}`, f.path, false, f.path === bulkFolder)));
+      const want = bulkUi.folder || bulkFolder;
+      list.forEach((f) => pick.add(new Option(`→ ${f.path}`, f.path, false, f.path === want)));
       go.disabled = !pick.value;
     };
     if (folderList) fill(folderList);
@@ -173,12 +200,14 @@
       window.pywebview.api.folder_choices().then((d) => { folderList = d.folders; fill(folderList); })
         .catch(() => { pick.options[0].text = "フォルダを読めませんでした"; }).finally(end);
     }
-    pick.addEventListener("change", () => (go.disabled = !pick.value));
+    pick.addEventListener("change", () => { go.disabled = !pick.value; bulkUi.folder = pick.value; });
     const count = el("span", "cnt");
     const right = el("div", "bulk-right");
     right.append(pick, go);
     head.append(el("span", "bulk-title", "📨 配信メール"), count, right);
     const details = el("details");
+    details.open = bulkUi.open;
+    details.addEventListener("toggle", () => (bulkUi.open = details.open));
     details.append(el("summary", null, "中を見る（チェックを外したメールは移しません）"));
     const list = el("ul", "bulk-list");
     bulk.forEach((m) => {
@@ -186,9 +215,9 @@
       const lab = el("label");
       const cb = el("input");
       cb.type = "checkbox";
-      cb.checked = true;
+      cb.checked = !bulkOff.has(m.id);
       cb.value = m.id;
-      cb.addEventListener("change", update);
+      cb.addEventListener("change", () => { if (cb.checked) bulkOff.delete(m.id); else bulkOff.add(m.id); update(); });
       lab.append(cb, el("span", "subject", m.subject || "（件名なし）"), el("span", "snippet", m.snippet));
       li.append(lab);
       list.append(li);
@@ -286,7 +315,8 @@
   async function runAuto() {
     begin("自動で移しています…");
     let data;
-    try { data = await window.pywebview.api.auto_move(); } finally { end(); }
+    // 人がチェックを外した・フォルダを選び直したメールは、自動では移さない
+    try { data = await window.pywebview.api.auto_move([...kept.keys()]); } finally { end(); }
     showFolders(data.folders);
     autoLog.push(...data.autoMoved.items);
     showMails(data);
@@ -438,7 +468,7 @@
         : "";
       $("status").textContent = "Outlook のメールを読んでいます…";
       const data = await api.mails();
-      showMails(data);
+      showMails(data, true);
       $("auto-toggle").checked = data.autoMove.enabled;
       $("auto-toggle").disabled = false;
       $("refresh").value = String(data.refreshMinutes);
@@ -475,9 +505,9 @@
     }, minutes * 60000);
   }
   function userIsEditing() {
-    return busy > 0 || $("picker").open
-      || document.querySelector(".card.rechosen") !== null
-      || document.querySelector("#mails input[type=checkbox]:not(:checked), #bulk input[type=checkbox]:not(:checked)") !== null;
+    // 選んだ状態は出し直しても残るので、止めるのは「移している最中」「振り分け先の窓」「フォルダの選び欄を開いている間」だけ
+    const a = document.activeElement;
+    return busy > 0 || $("picker").open || (a !== null && a.tagName === "SELECT");
   }
   // 新しく届いたメールを1分ごとに見る。あれば一覧を出し直し、「自動で移す」がオンなら条件を満たすメールを移す
   const WATCH_MS = 60000;
@@ -489,8 +519,7 @@
           begin(`新しく届いたメール ${count} 通に提案を付けています…`);
           let data;
           try { data = await window.pywebview.api.mails(); } finally { end(); }
-          showMails(data);
-          $("status").textContent = `新しく届いたメール ${count} 通に提案を付けました。`;
+          showMails(data, true);
           if (data.autoMove.enabled && data.mails.some((m) => m.autoReady)) await runAuto();
         }
       }

@@ -324,11 +324,13 @@ class Api:
         SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
         return {"enabled": bool(enabled)}
 
-    def auto_move(self) -> dict:
-        """スイッチがオンのとき、信頼のあるフォルダへの確かな提案（autoReady）を自動で移す。移したメールはお手本に加える。"""
+    def auto_move(self, keep: list[str] | None = None) -> dict:
+        """スイッチがオンのとき、信頼のあるフォルダへの確かな提案（autoReady）を自動で移す。移したメールはお手本に加える。
+        keep は、人が画面でチェックを外した・フォルダを選び直したメールの EntryID。自動では移さない。"""
         if not load_settings().get("auto_move"):
             raise RuntimeError("「自動で移す」がオフです")
-        pairs = [(i, f) for i, f in self._auto_ready.items() if i in self._last]
+        skip = set(keep or [])
+        pairs = [(i, f) for i, f in self._auto_ready.items() if i in self._last and i not in skip]
 
         def work(o: OutlookMover):
             done, failed = [], 0
