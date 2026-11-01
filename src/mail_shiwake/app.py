@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import threading
 from pathlib import Path
 
@@ -187,9 +188,12 @@ class Api:
         return result
 
 
+URL = re.compile(r"<?(?:https?|mailto):[^\s>]*>?")  # HTML メールの本文の頭に並びがちな、画像やリンクの URL
+
+
 def snippet(body: str) -> str:
-    """カードに出す本文の頭（改行や空白はまとめて1つにする）。"""
-    return " ".join(body.split())[:SNIPPET_CHARS]
+    """カードに出す本文の頭（URL は省き、改行や空白はまとめて1つにする）。"""
+    return " ".join(URL.sub(" ", body).split())[:SNIPPET_CHARS]
 
 
 def page() -> str:
