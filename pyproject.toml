@@ -1,6 +1,6 @@
 [project]
 name = "mail-shiwake"
-version = "0.2.0"
+version = "0.2.1"
 description = "お手本を数通見せるだけで、メールを話題ごとに振り分ける。メールはパソコンの外に出さない（EmbeddingGemma 2）"
 readme = "README.md"
 requires-python = ">=3.12"
