@@ -26,6 +26,7 @@ mail-shiwake --json suggestions.json  # ファイルに書く（exe ではこち
 | `folderName` | 文字 | 届いたメールを読んだフォルダ。`ok` のときだけ |
 | `targets` | 文字の配列 | 振り分け先のフォルダ。`ok` のときだけ |
 | `bulkFolder` | 文字または null | 配信メールをまとめて移す先（窓で選んだもの）。`ok` のときだけ |
+| `autoMove` | オブジェクト | 「自動で移す」の状態。`enabled`（スイッチがオンか）・`trustedFolders`（信頼のあるフォルダ）。`ok` のときだけ |
 | `thresholds` | オブジェクト | 判断に使った線。`unsureGap`（1位と2位の差がこれ未満なら迷う）・`importantGap`（大事の度合いがこれ以上なら大事かも）・`minFlagged`（旗付きのお手本がこれ未満なら大事を見分けない）。`ok` のときだけ |
 | `mails` | 配列 | 届いたメール1通ずつ（下の表）。新しい順。`ok` のときだけ |
 
@@ -33,7 +34,7 @@ mail-shiwake --json suggestions.json  # ファイルに書く（exe ではこち
 
 | 項目 | 型 | 意味 |
 |---|---|---|
-| `folders` | 配列 | 振り分け先ごとの `name`（フォルダ）・`count`（お手本の数）・`needed`（お手本があと何通あるとよいか。3通以上あれば 0。0通のフォルダは提案に出ません） |
+| `folders` | 配列 | 振り分け先ごとの `name`（フォルダ）・`count`（お手本の数）・`needed`（お手本があと何通あるとよいか。3通以上あれば 0。0通のフォルダは提案に出ません）・`trust`（信頼。`count` 最近の記録の数・`misses` 外れの数・`window` 見る数・`trusted` 信頼あり。最近の `window` 通で外れが1通以下なら信頼あり） |
 | `flagged` | 数 | 「大事」のお手本にした旗付きメールの数 |
 | `minFlagged` | 数 | 大事を見分けるのに要る旗付きメールの数 |
 | `missing` | 文字の配列 | 見つからなかったフォルダ（`missing_folders` のときだけ） |
@@ -60,6 +61,7 @@ mail-shiwake --json suggestions.json  # ファイルに書く（exe ではこち
 | `bulkReason` | 文字または null | 配信メールと見分けたヘッダー（`List-Unsubscribe`・`List-Id`・`Precedence`） |
 | `group` | 文字 | 窓のどこに出すか。`main`（上の一覧）か `bulk`（配信メールの箱）。旗付きや大事かもの配信メールは `main` |
 | `autoMove` | 真偽 | 提案どおりにまとめて移せるメール（`main` で、迷っておらず、大事かもでもない） |
+| `autoReady` | 真偽 | 「自動で移す」がオンなら自動で移すメール（`autoMove` で、旗が無く、提案先のフォルダに信頼があり、前に元に戻したメールでない） |
 
 ## nextSteps（次にできる操作）
 
