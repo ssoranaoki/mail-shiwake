@@ -1,0 +1,28 @@
+# Windows 用の exe と zip を、公開しているソースから GitHub Actions で作る。
+# タグ（v*）を push したときと、Actions の画面から手で動かしたときに動く。
+# コード署名（SignPath Foundation）の条件「公開しているソースから自動ビルドで作る」に合わせたもの。署名の手順は、審査のあとに足す。
+name: build-windows
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: exe と zip を作る
+        shell: powershell
+        run: .\packaging\build_exe.ps1
+      - name: 作った zip を保存する
+        uses: actions/upload-artifact@v7
+        with:
+          name: mail-shiwake-windows
+          path: dist/mail-shiwake-*-windows.zip
+          if-no-files-found: error

@@ -74,6 +74,24 @@ mail-shiwake
 - インターネットを使うのは、はじめのモデルのダウンロードだけです。使うモデルの版は固定してあり、2回目からは更新を確かめにも行きません
 - 計算を速くするため、メールから作った数字の列（埋め込み）を `ホームフォルダ\.mail-shiwake\vectors` に保存します。件名や本文は保存しません。消しても、次に起動したときに計算し直すだけです
 
+## 削除のしかた
+
+1. メール仕分けの窓を閉じます
+2. exe で入れたときは、展開したフォルダを消します。uv で入れたときは `uv tool uninstall mail-shiwake` を実行します
+3. 設定・モデル・計算の記録を消すときは、`ホームフォルダ\.mail-shiwake` フォルダを消します
+
+Outlook のメールとフォルダは、消しても変わりません。
+
+## Code signing policy
+
+Windows 用の exe には SignPath Foundation の無料のコード署名を付けるため、申し込みをしています。署名を付けた版から、次のとおりになります。
+
+- Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/)
+- exe はこのリポジトリのソースから GitHub Actions で自動的に作ります（[.github/workflows/build-windows.yml](.github/workflows/build-windows.yml)）
+- Committers and reviewers: [ssoranaoki](https://github.com/ssoranaoki)
+- Approvers: [ssoranaoki](https://github.com/ssoranaoki)
+- Privacy policy: This program will not transfer any information to other networked systems unless specifically requested by the user or the person installing or operating it. ただし、はじめて起動するときだけ、モデルのファイルを Hugging Face からダウンロードします（メールの内容は送りません）。くわしくは「メールとプライバシー」を見てください
+
 ## ライセンス
 
 [Apache License 2.0](LICENSE)

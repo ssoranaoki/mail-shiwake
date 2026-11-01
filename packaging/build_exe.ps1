@@ -9,9 +9,13 @@ if (Get-Process -Name mail-shiwake -ErrorAction SilentlyContinue) {
 }
 uv sync
 if ($LASTEXITCODE -ne 0) { throw "uv sync に失敗しました（終了コード $LASTEXITCODE）" }
+# exe の版の情報（製品名・版）を pyproject.toml から作る
+uv run python packaging/make_version_info.py packaging/version_info.generated.txt
+if ($LASTEXITCODE -ne 0) { throw "版の情報を作れませんでした" }
 # win32timezone は、pywin32 が Outlook の日時を直すときに動いている途中で読みこむ部品で、自動では見つからないので指定する
 uv run --with "pyinstaller>=6.22" pyinstaller --noconfirm --clean --windowed --onedir `
   --name mail-shiwake `
+  --version-file packaging/version_info.generated.txt `
   --paths src `
   --hidden-import win32timezone `
   --add-data "src/mail_shiwake/ui:mail_shiwake/ui" `

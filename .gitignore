@@ -12,3 +12,4 @@ _dev/
 build/
 dist/
 *.spec
+packaging/version_info.generated.txt
