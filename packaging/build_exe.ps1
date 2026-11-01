@@ -3,7 +3,12 @@
 # 作るもの: dist\mail-shiwake\mail-shiwake.exe と、配る zip dist\mail-shiwake-<版>-windows.zip
 $ErrorActionPreference = "Stop"
 $version = (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value
+# 開発用に起動したメール仕分け（uv run）が動いていると、入れ直しに失敗して古い中身の exe ができる（2026-11-01 に起きた）
+if (Get-Process -Name mail-shiwake -ErrorAction SilentlyContinue) {
+  throw "メール仕分けが動いています。窓を閉じてから、もう一度実行してください"
+}
 uv sync
+if ($LASTEXITCODE -ne 0) { throw "uv sync に失敗しました（終了コード $LASTEXITCODE）" }
 # win32timezone は、pywin32 が Outlook の日時を直すときに動いている途中で読みこむ部品で、自動では見つからないので指定する
 uv run --with "pyinstaller>=6.22" pyinstaller --noconfirm --clean --windowed --onedir `
   --name mail-shiwake `
