@@ -23,13 +23,14 @@ import webview
 import numpy as np
 
 from .cache import CachedEmbedder
-from .embedder import Embedder
+from .embedder import REVISION, Embedder
 from .importance import MIN_FLAGGED, Importance
 from .mover import OutlookMover
 from .sorter import Sorter, mail_text
 
 UI = Path(__file__).resolve().parent / "ui"
 SETTINGS = Path.home() / ".mail-shiwake" / "settings.json"  # 起動の設定（ダブルクリックで起動するときに使う）
+VECTORS = SETTINGS.parent / "vectors" / f"embeddinggemma-2-{REVISION[:12]}-q4.npz"  # 覚えた数字の列（文章は入れない）
 DEFAULT_SETTINGS = {
     "store": None,  # 読むデータファイルの名前。null なら受信トレイ
     "folder": "",  # 届いたメールのフォルダ（"" なら受信トレイそのもの）
@@ -134,13 +135,15 @@ class Api:
             self._flags = {f: [m.flagged for m in ms] for f, ms in read.items()}
             if self._sorter is None:
                 self._activity("モデルを読み込んでいます…（はじめてのときはダウンロードに数分かかります）")
-                self._sorter = Sorter(CachedEmbedder(Embedder()))  # 一度計算したメールは計算し直さない
+                # 一度計算したメールは計算し直さない。数字の列はパソコンの中のファイルにも残す（モデルの版ごと）
+                self._sorter = Sorter(CachedEmbedder(Embedder(), path=VECTORS))
             self._activity(f"お手本を覚えています（{sum(len(v) for v in self._examples.values())} 通）…")
             self._sorter.learn(self._examples)
             self._flagged_vectors = (self._sorter.embedder.embed([mail_text(m.subject, m.body) for m in flagged],
                                                                  prompt="classification")
                                      if flagged else np.zeros((0, 768), dtype=np.float32))
             self._build_importance()
+            self._sorter.embedder.save()  # 新しく計算した数字の列をファイルに残す（次に起動したとき計算しない）
             steps = [{"action": "add_examples", "folders": [f["name"] for f in self._folders() if f["needed"]],
                       "need": MIN_EXAMPLES}] if any(f["needed"] for f in self._folders()) else []
             if len(flagged) < MIN_FLAGGED:
@@ -213,6 +216,7 @@ class Api:
                 })
                 # 提案どおりにまとめて移してよいか（迷っている・大事かもは、1通ずつ確かめてもらう）
                 out[-1]["autoMove"] = out[-1]["group"] == "main" and not out[-1]["unsure"] and not important
+        self._sorter.embedder.save()
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ",
                 "targets": self._targets, "bulkFolder": load_settings().get("bulk_folder"),
                 # 判断に使った線（画面の「迷っています」「大事かも」は、この値と比べて決めている）
