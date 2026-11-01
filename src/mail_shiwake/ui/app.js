@@ -25,6 +25,12 @@
       li.innerHTML = ICON_FOLDER;
       li.firstChild.style.color = color(f.name);
       li.append(el("span", "name", f.name), el("span", "count", `(${f.count})`));
+      // お手本が少ないフォルダは、あと何通あるとよいかを出す（0通のフォルダは提案に出てこない）
+      if (f.needed) {
+        li.classList.add("few");
+        li.title = f.count ? `お手本があと ${f.needed} 通あると、提案が安定します` : "お手本が無いので、まだ提案に出てきません";
+        li.append(el("span", "need", f.count ? `あと ${f.needed} 通` : "まだ提案に出ません"));
+      }
       ul.appendChild(li);
     });
   }
@@ -35,8 +41,20 @@
     ul.textContent = "";
     const main = data.mails.filter((m) => m.group !== "bulk");
     const bulk = data.mails.filter((m) => m.group === "bulk");
+    const checks = []; // まとめて移すメール（チェック欄と、そのカードの移す先）
     main.forEach((m) => {
-      const li = el("li", "card");
+      const li = el("li", "card with-check");
+      // 迷っていないメールにだけチェック欄を付ける（迷っている・大事かもは1通ずつ確かめる）
+      const cell = el("div", "check");
+      if (m.autoMove) {
+        const cb = el("input");
+        cb.type = "checkbox";
+        cb.checked = true;
+        cb.setAttribute("aria-label", `「${m.subject}」をまとめて移す`);
+        cb.addEventListener("change", updateMany);
+        cell.append(cb);
+        checks.push({ cb, m, li, pickOf: () => li.querySelector("select").value });
+      }
       const av = el("div", "avatar", m.folder.slice(0, 1));
       av.style.background = color(m.folder);
       av.setAttribute("aria-hidden", "true");
@@ -64,13 +82,28 @@
       move.type = "button";
       move.addEventListener("click", () => moveMail(m, pick.value, li));
       right.append(sug, move);
-      li.append(av, text, right);
+      li.append(cell, av, text, right);
       ul.appendChild(li);
     });
+    // 一覧の上の「提案どおりにまとめて移す」
+    const bar = $("main-actions");
+    bar.textContent = "";
+    const many = el("button", "primary", "");
+    many.type = "button";
+    function updateMany() {
+      const n = checks.filter((c) => c.cb.checked).length;
+      many.textContent = `チェックした ${n} 通を、選んだフォルダへまとめて移す`;
+      many.disabled = n === 0;
+    }
+    if (checks.length) {
+      updateMany();
+      many.addEventListener("click", () => moveMany(checks.filter((c) => c.cb.checked)));
+      bar.append(many, el("span", "hint", "迷っているメールと大事かものメールは入りません。1通ずつ確かめてください。"));
+    }
     showBulk(bulk, data.bulkFolder);
     const unsure = main.filter((m) => m.unsure).length;
     const important = main.filter((m) => m.important).length;
-    if (!data.moved && !data.bulkMoved) {
+    if (!data.moved && !data.bulkMoved && !data.manyMoved) {
       $("status").textContent = data.mails.length
         ? `${main.length} 通に提案を付けました。` + (important ? `大事かもしれないメールが ${important} 通あります。` : "")
           + (unsure ? `迷っているメールが ${unsure} 通あります。` : "")
@@ -164,6 +197,7 @@
   function showGuide(learned) {
     $("list-title").textContent = "はじめに";
     $("mails").textContent = "";
+    $("main-actions").textContent = "";
     $("bulk").textContent = "";
     const box = el("div", "guide");
     const missing = learned.missing && learned.missing.length;
@@ -186,6 +220,29 @@
     box.append(chips, ol, sub);
     $("status").textContent = "";
     $("status").append(box);
+  }
+
+  async function moveMany(chosen) {
+    const moves = chosen.map((c) => ({ id: c.m.id, folder: c.pickOf() }));
+    document.querySelectorAll("#mails button, #mails select, #mails input, #main-actions button").forEach((x) => (x.disabled = true));
+    $("status").textContent = `${moves.length} 通を移しています…`;
+    try {
+      const data = await window.pywebview.api.move_many(moves);
+      showFolders(data.folders);
+      const r = data.manyMoved;
+      const msg = `${r.count} 通を移しました。` + (r.failed ? `${r.failed} 通は移せませんでした。` : "") + "移したメールも、これからはお手本になります。";
+      if (data.listError) {
+        $("mails").textContent = "";
+        $("main-actions").textContent = "";
+        $("status").textContent = msg + `ただ、残りのメールの読み直しに失敗しました（${data.listError}）。「お手本を覚える」を押して読み直してください。`;
+        return;
+      }
+      showMails(data);
+      $("status").textContent = msg;
+    } catch (e) {
+      document.querySelectorAll("#mails button, #mails select, #mails input, #main-actions button").forEach((x) => (x.disabled = false));
+      $("status").textContent = `移せませんでした：${e && e.message ? e.message : e}`;
+    }
   }
 
   async function moveMail(m, folder, li) {

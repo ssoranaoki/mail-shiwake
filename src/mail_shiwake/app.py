@@ -36,6 +36,7 @@ DEFAULT_SETTINGS = {
     "bulk_folder": None,  # 配信メールをまとめて移す先（画面で選ぶと覚える）
 }
 EXAMPLES_PER_FOLDER = 50  # フォルダごとに覚えるお手本の数（新しい順）
+MIN_EXAMPLES = 3  # 振り分け先ごとのお手本がこれより少ないと、「あと何通」と案内する（0通のフォルダは提案に出ない）
 FLAG_SCAN = 300  # 旗付きのお手本を探すとき、フォルダごとに見る新しいメールの数
 FLAGGED_EXAMPLES = 50  # 「大事」のお手本にする旗付きメールの数（新しい順）
 UNSURE_GAP = 0.03  # 1位と2位の近さの差がこれより小さいと「迷っています」（練習用の8通で決めた値）
@@ -74,7 +75,11 @@ class Api:
             pythoncom.CoUninitialize()
 
     def _folders(self) -> list[dict]:
-        return [{"name": f, "count": len(self._examples.get(f, []))} for f in self._targets]
+        out = []
+        for f in self._targets:
+            n = len(self._examples.get(f, []))
+            out.append({"name": f, "count": n, "needed": max(0, MIN_EXAMPLES - n)})  # needed: あと何通あるとよいか
+        return out
 
     def learn(self) -> dict:
         """振り分け先のフォルダのメールを、お手本として覚える。フォルダとお手本の数を返す。
@@ -118,8 +123,10 @@ class Api:
                                                                  prompt="classification")
                                      if flagged else np.zeros((0, 768), dtype=np.float32))
             self._build_importance()
-            steps = ([{"action": "flag_more", "have": len(flagged), "need": MIN_FLAGGED}]
-                     if len(flagged) < MIN_FLAGGED else [])
+            steps = [{"action": "add_examples", "folders": [f["name"] for f in self._folders() if f["needed"]],
+                      "need": MIN_EXAMPLES}] if any(f["needed"] for f in self._folders()) else []
+            if len(flagged) < MIN_FLAGGED:
+                steps.append({"action": "flag_more", "have": len(flagged), "need": MIN_FLAGGED})
             return {"folders": self._folders(), "flagged": len(flagged), "minFlagged": MIN_FLAGGED, "nextSteps": steps}
 
     def _build_importance(self) -> None:
@@ -182,11 +189,52 @@ class Api:
                     # 画面のどこに出すか: 配信メールは下の箱へ。旗付き・大事かもは配信でも上に残す
                     "group": "bulk" if m.bulk_reason and not m.flagged and not important else "main",
                 })
+                # 提案どおりにまとめて移してよいか（迷っている・大事かもは、1通ずつ確かめてもらう）
+                out[-1]["autoMove"] = out[-1]["group"] == "main" and not out[-1]["unsure"] and not important
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ",
                 "targets": self._targets, "bulkFolder": load_settings().get("bulk_folder"),
                 # 判断に使った線（画面の「迷っています」「大事かも」は、この値と比べて決めている）
                 "thresholds": {"unsureGap": UNSURE_GAP, "importantGap": UNSURE_GAP, "minFlagged": MIN_FLAGGED},
                 "nextSteps": mail_steps(out, load_settings().get("bulk_folder"))}
+
+    def move_many(self, moves: list[dict]) -> dict:
+        """上の一覧のメールを、それぞれ選ばれたフォルダへまとめて移す（「まとめて移す」を押したときだけ）。
+
+        moves は [{"id": EntryID, "folder": 振り分け先}]。移したメールは、1通ずつ移したときと同じくお手本に加える。
+        """
+        pairs = [(m["id"], m["folder"]) for m in moves if m.get("id") in self._last]
+        if not pairs:
+            raise LookupError("移すメールがありません")
+        for _, f in pairs:
+            if f not in self._targets:
+                raise ValueError(f"「{f}」は振り分け先ではありません")
+
+        def work(o: OutlookMover):
+            done, failed = [], 0
+            for i, f in pairs:
+                try:
+                    o.move(i, f, store=self._store)
+                    done.append((i, f))
+                except Exception:
+                    failed += 1
+            return done, failed
+
+        done, failed = self._outlook(work)
+        with self._lock:
+            for i, f in done:
+                subject, body, flagged = self._last.pop(i)
+                self._examples.setdefault(f, []).append((subject, body))
+                self._flags.setdefault(f, []).append(flagged)
+            if done:
+                self._sorter.learn(self._examples)  # まとめて移したメールも、ここで新しいお手本になる
+                self._build_importance()
+        info = {"count": len(done), "failed": failed}
+        try:
+            result = self.mails()
+        except Exception as e:
+            return {"manyMoved": info, "folders": self._folders(), "listError": str(e)}
+        result.update({"manyMoved": info, "folders": self._folders()})
+        return result
 
     def move_bulk(self, entry_ids: list[str], folder: str) -> dict:
         """配信メールを、人が選んだフォルダへまとめて移す（「まとめて移す」を押したときだけ）。
@@ -256,6 +304,8 @@ def mail_steps(mails: list[dict], bulk_folder: str | None) -> list[dict]:
         steps.append({"action": "check_important", "count": sum(m["important"] for m in main)})
     if any(m["unsure"] for m in main):
         steps.append({"action": "review_unsure", "count": sum(m["unsure"] for m in main)})
+    if any(m.get("autoMove") for m in main):
+        steps.append({"action": "move_many", "count": sum(bool(m.get("autoMove")) for m in main)})  # 提案どおりにまとめて
     if main:
         steps.append({"action": "move", "count": len(main)})  # 提案を見て1通ずつ移す
     if bulk:

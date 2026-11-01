@@ -33,7 +33,7 @@ mail-shiwake --json suggestions.json  # ファイルに書く（exe ではこち
 
 | 項目 | 型 | 意味 |
 |---|---|---|
-| `folders` | 配列 | 振り分け先ごとの `name`（フォルダ）と `count`（お手本の数） |
+| `folders` | 配列 | 振り分け先ごとの `name`（フォルダ）・`count`（お手本の数）・`needed`（お手本があと何通あるとよいか。3通以上あれば 0。0通のフォルダは提案に出ません） |
 | `flagged` | 数 | 「大事」のお手本にした旗付きメールの数 |
 | `minFlagged` | 数 | 大事を見分けるのに要る旗付きメールの数 |
 | `missing` | 文字の配列 | 見つからなかったフォルダ（`missing_folders` のときだけ） |
@@ -59,6 +59,7 @@ mail-shiwake --json suggestions.json  # ファイルに書く（exe ではこち
 | `bulk` | 真偽 | 配信メール（メルマガ・宣伝・一斉のお知らせ） |
 | `bulkReason` | 文字または null | 配信メールと見分けたヘッダー（`List-Unsubscribe`・`List-Id`・`Precedence`） |
 | `group` | 文字 | 窓のどこに出すか。`main`（上の一覧）か `bulk`（配信メールの箱）。旗付きや大事かもの配信メールは `main` |
+| `autoMove` | 真偽 | 提案どおりにまとめて移せるメール（`main` で、迷っておらず、大事かもでもない） |
 
 ## nextSteps（次にできる操作）
 
@@ -67,11 +68,12 @@ mail-shiwake --json suggestions.json  # ファイルに書く（exe ではこち
 | action | ほかの項目 | 意味 |
 |---|---|---|
 | `create_folders` | `folders`・`where` | このフォルダを Outlook に作る |
-| `add_examples` | `folders` | 振り分け先のフォルダに、お手本のメールを入れる |
+| `add_examples` | `folders`（・`need`） | 振り分け先のフォルダに、お手本のメールを入れる（`need` 通以上が目安） |
 | `choose_targets` | なし | 窓の「振り分け先を選ぶ」で、ほかのフォルダを選ぶ |
 | `flag_more` | `have`・`need` | Outlook で大事なメールに旗を付ける（いま `have` 通、`need` 通以上で大事を見分ける） |
 | `check_important` | `count` | 大事かもしれないメールを見る |
 | `review_unsure` | `count` | 迷っているメールの提案を確かめる |
+| `move_many` | `count` | 窓で、迷っていないメールを提案どおりにまとめて移す |
 | `move` | `count` | 提案を見て、窓で1通ずつ移す |
 | `choose_bulk_folder` | `count` | 配信メールを移す先を、窓で選ぶ |
 | `move_bulk` | `count`・`folder` | 窓で配信メールをまとめて移す |

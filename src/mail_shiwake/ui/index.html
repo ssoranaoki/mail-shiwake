@@ -29,13 +29,15 @@
   <section class="list" aria-label="届いたメール">
     <p class="list-title" id="list-title">届いたメール</p>
     <div id="status" class="status" role="status">読み込み中…</div>
+    <div id="main-actions" class="main-actions"></div>
     <ul id="mails" class="mails"></ul>
     <div id="bulk"></div>
   </section>
 </div>
 <dialog id="picker" aria-labelledby="picker-title">
   <h2 id="picker-title">振り分け先を選ぶ</h2>
-  <p class="hint">振り分け先にするフォルダにチェックを付けてください（2つ以上）。フォルダの中のメールがお手本になります。</p>
+  <p class="hint">振り分け先にするフォルダにチェックを付けてください（2つ以上）。フォルダの中のメールがお手本になります。<br>
+  どれにも当てはまらないメールのために、Outlook で「その他」のようなフォルダを作って、ここで選んでおくと、無理な提案が減ります。</p>
   <div id="picker-list" class="picker-list">読み込み中…</div>
   <p id="picker-msg" class="picker-msg" role="status"></p>
   <div class="picker-actions">

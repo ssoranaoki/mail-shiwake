@@ -27,6 +27,9 @@ button { font: inherit; cursor: pointer; }
 .folders li { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 8px; font-size: 1rem; }
 .folders li .count { margin-left: auto; color: var(--soft); }
 .folders li svg { color: var(--soft); }
+.folders li { flex-wrap: wrap; }
+.folders li.few { background: var(--warn-soft); }
+.folders li .need { flex-basis: 100%; padding-left: 28px; font-size: .8rem; color: var(--warn); }
 
 .list { padding: 14px 18px; overflow-y: auto; }
 .status { margin: 0 8px 10px; color: var(--soft); font-size: .92rem; }
@@ -39,6 +42,11 @@ button { font: inherit; cursor: pointer; }
 .right { display: flex; align-items: center; gap: 10px; }
 .suggest { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .pick { font: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--panel); color: var(--ink); }
+.card.with-check { grid-template-columns: 22px 40px 1fr auto; }
+.card .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+.main-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
+.main-actions:empty { display: none; }
+.main-actions .hint { color: var(--soft); font-size: .85rem; }
 .card.rechosen { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .unsure { font-size: .82rem; color: var(--warn); background: var(--warn-soft); border-radius: 6px; padding: 1px 8px; white-space: nowrap; }
 .move { border: 1px solid var(--accent); background: var(--accent); color: #fff; font-weight: 700; border-radius: 8px; padding: 7px 18px; }
@@ -83,6 +91,6 @@ dialog .hint { margin: 0 0 12px; color: var(--soft); font-size: .9rem; }
   .main { grid-template-columns: 1fr; }
   .folders { border-right: 0; border-bottom: 1px solid var(--line); }
   .folders ul { display: flex; flex-wrap: wrap; gap: 4px; }
-  .card { grid-template-columns: 40px 1fr; }
+  .card, .card.with-check { grid-template-columns: 22px 40px 1fr; }
   .right { grid-column: 1 / -1; justify-content: flex-end; }
 }
