@@ -15,6 +15,10 @@ OL_MAIL = 43  # OlObjectClass.olMail（メール以外の会議の招待など�
 OL_MAIL_ITEM = 0  # OlItemType.olMailItem（Folder.DefaultItemType がこれならメールのフォルダ）
 # OlDefaultFolders: 削除済み 3・送信トレイ 4・送信済み 5・下書き 16・迷惑メール 23（振り分け先にしない）
 OL_SPECIAL_FOLDERS = (3, 4, 5, 16, 23)
+PR_HEADERS = "http://schemas.microsoft.com/mapi/proptag/0x007D001F"  # PR_TRANSPORT_MESSAGE_HEADERS（受け取ったときのヘッダー）
+# 一斉配信のメールに送り手が付ける印（見つけた順に、何で見分けたかとして返す）
+BULK_HEADERS = (("list-unsubscribe", "List-Unsubscribe"), ("list-id", "List-Id"))
+BULK_PRECEDENCE = ("bulk", "list", "junk")
 
 
 @dataclass
@@ -24,6 +28,7 @@ class Mail:
     body: str
     received: datetime | None
     flagged: bool = False  # 旗（フラグ）が付いているか（MailItem.IsMarkedAsTask）
+    bulk_reason: str | None = None  # 配信メール（メルマガ・宣伝・一斉のお知らせ）なら、見分けたヘッダーの名前
 
 
 class OutlookReader:
@@ -159,4 +164,20 @@ class OutlookReader:
         # 送っていない下書きは、受け取った日時が 4501年1月1日（日時なしの印）になる
         if not isinstance(received, datetime) or received.year >= 4500:
             received = None
-        return Mail(item.EntryID, item.Subject or "", item.Body or "", received, bool(item.IsMarkedAsTask))
+        return Mail(item.EntryID, item.Subject or "", item.Body or "", received, bool(item.IsMarkedAsTask),
+                    bulk_reason(item))
+
+
+def bulk_reason(item) -> str | None:
+    """ヘッダーに一斉配信の印があれば、その名前を返す（RFC 2369 の List-Unsubscribe など）。無ければ None。"""
+    try:
+        headers = item.PropertyAccessor.GetProperty(PR_HEADERS) or ""
+    except Exception:  # 自分で作ったメールなど、ヘッダーが無いもの
+        return None
+    lines = ("\n" + headers.lower()).replace("\r\n", "\n")
+    for key, name in BULK_HEADERS:
+        if f"\n{key}:" in lines:
+            return name
+    if any(f"\nprecedence: {v}" in lines for v in BULK_PRECEDENCE):
+        return "Precedence"
+    return None

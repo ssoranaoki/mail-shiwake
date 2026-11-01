@@ -33,7 +33,9 @@
     $("list-title").textContent = `届いたメール（${data.source} ／ ${data.folderName}）`;
     const ul = $("mails");
     ul.textContent = "";
-    data.mails.forEach((m) => {
+    const main = data.mails.filter((m) => m.group !== "bulk");
+    const bulk = data.mails.filter((m) => m.group === "bulk");
+    main.forEach((m) => {
       const li = el("li", "card");
       const av = el("div", "avatar", m.folder.slice(0, 1));
       av.style.background = color(m.folder);
@@ -65,14 +67,95 @@
       li.append(av, text, right);
       ul.appendChild(li);
     });
-    const unsure = data.mails.filter((m) => m.unsure).length;
-    const important = data.mails.filter((m) => m.important).length;
-    if (!data.moved) {
+    showBulk(bulk, data.bulkFolder);
+    const unsure = main.filter((m) => m.unsure).length;
+    const important = main.filter((m) => m.important).length;
+    if (!data.moved && !data.bulkMoved) {
       $("status").textContent = data.mails.length
-        ? `${data.mails.length} 通に提案を付けました。` + (important ? `大事かもしれないメールが ${important} 通あります。` : "")
-          + (unsure ? `迷っているメールが ${unsure} 通あります。` : "") + "違っていたら、フォルダを選び直してから「移す」を押してください。"
+        ? `${main.length} 通に提案を付けました。` + (important ? `大事かもしれないメールが ${important} 通あります。` : "")
+          + (unsure ? `迷っているメールが ${unsure} 通あります。` : "")
+          + (bulk.length ? `配信メール ${bulk.length} 通は、下にまとめました。` : "")
+          + "違っていたら、フォルダを選び直してから「移す」を押してください。"
         : "届いたメールはありません。";
       if (flagNote) $("status").append(el("span", "flag-note", flagNote));
+    }
+  }
+
+  // 配信メール（メルマガ・宣伝・一斉のお知らせ）を下の1つの箱にまとめる。移す先を選んで「まとめて移す」
+  let folderList = null; // 移す先に選べるフォルダ（最初に箱を出したときに1回だけ読む）
+  function showBulk(bulk, bulkFolder) {
+    const box = $("bulk");
+    box.textContent = "";
+    if (!bulk.length) return;
+    const g = el("section", "bulk-box");
+    g.setAttribute("aria-label", "配信メール");
+    const head = el("div", "bulk-head");
+    const pick = el("select", "pick");
+    pick.setAttribute("aria-label", "配信メールを移す先のフォルダ");
+    pick.add(new Option("移す先を選ぶ…", ""));
+    const go = el("button", "move", "まとめて移す");
+    go.type = "button";
+    go.disabled = true;
+    const fill = (list) => {
+      list.forEach((f) => pick.add(new Option(`→ ${f.path}`, f.path, false, f.path === bulkFolder)));
+      go.disabled = !pick.value;
+    };
+    if (folderList) fill(folderList);
+    else window.pywebview.api.folder_choices().then((d) => { folderList = d.folders; fill(folderList); })
+      .catch(() => { pick.options[0].text = "フォルダを読めませんでした"; });
+    pick.addEventListener("change", () => (go.disabled = !pick.value));
+    const count = el("span", "cnt");
+    const right = el("div", "bulk-right");
+    right.append(pick, go);
+    head.append(el("span", "bulk-title", "📨 配信メール"), count, right);
+    const details = el("details");
+    details.append(el("summary", null, "中を見る（チェックを外したメールは移しません）"));
+    const list = el("ul", "bulk-list");
+    bulk.forEach((m) => {
+      const li = el("li");
+      const lab = el("label");
+      const cb = el("input");
+      cb.type = "checkbox";
+      cb.checked = true;
+      cb.value = m.id;
+      cb.addEventListener("change", update);
+      lab.append(cb, el("span", "subject", m.subject || "（件名なし）"), el("span", "snippet", m.snippet));
+      li.append(lab);
+      list.append(li);
+    });
+    function update() {
+      const n = list.querySelectorAll("input:checked").length;
+      count.textContent = n === bulk.length ? `${bulk.length} 通` : `${n} / ${bulk.length} 通`;
+    }
+    update();
+    details.append(list);
+    go.addEventListener("click", () => moveBulk([...list.querySelectorAll("input:checked")].map((b) => b.value), pick.value, g));
+    g.append(head, details);
+    box.append(g);
+  }
+
+  async function moveBulk(ids, folder, g) {
+    if (!ids.length) {
+      $("status").textContent = "移す配信メールが選ばれていません。";
+      return;
+    }
+    g.querySelectorAll("button, select, input").forEach((x) => (x.disabled = true));
+    $("status").textContent = `配信メール ${ids.length} 通を「${folder}」へ移しています…`;
+    try {
+      const data = await window.pywebview.api.move_bulk(ids, folder);
+      showFolders(data.folders);
+      const r = data.bulkMoved;
+      const msg = `配信メール ${r.count} 通を「${r.folder}」へ移しました。` + (r.failed ? `${r.failed} 通は移せませんでした。` : "");
+      if (data.listError) {
+        $("bulk").textContent = "";
+        $("status").textContent = msg + `ただ、残りのメールの読み直しに失敗しました（${data.listError}）。「お手本を覚える」を押して読み直してください。`;
+        return;
+      }
+      showMails(data);
+      $("status").textContent = msg;
+    } catch (e) {
+      g.querySelectorAll("button, select, input").forEach((x) => (x.disabled = false));
+      $("status").textContent = `移せませんでした：${e && e.message ? e.message : e}`;
     }
   }
 
@@ -81,6 +164,7 @@
   function showGuide(learned) {
     $("list-title").textContent = "はじめに";
     $("mails").textContent = "";
+    $("bulk").textContent = "";
     const box = el("div", "guide");
     const missing = learned.missing && learned.missing.length;
     box.append(el("h2", null, missing ? "振り分け先のフォルダを用意してください" : "お手本のメールを入れてください"),

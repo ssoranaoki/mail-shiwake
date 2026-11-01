@@ -32,6 +32,7 @@ DEFAULT_SETTINGS = {
     "store": None,  # 読むデータファイルの名前。null なら受信トレイ
     "folder": "",  # 届いたメールのフォルダ（"" なら受信トレイそのもの）
     "targets": ["請求書", "注文", "問い合わせ", "お知らせ"],  # 振り分け先（中のメールがお手本になる）
+    "bulk_folder": None,  # 配信メールをまとめて移す先（画面で選ぶと覚える）
 }
 EXAMPLES_PER_FOLDER = 50  # フォルダごとに覚えるお手本の数（新しい順）
 FLAG_SCAN = 300  # 旗付きのお手本を探すとき、フォルダごとに見る新しいメールの数
@@ -152,19 +153,60 @@ class Api:
                 ranked = self._sorter.rank(vec)
                 top = ranked[0]
                 second = ranked[1] if len(ranked) > 1 else None  # フォルダが1つだけなら迷いようがない
+                # 旗がまだ無く、「ふつう」より「大事」のお手本に、迷いの幅以上近いときだけ印を付ける
+                important = (not m.flagged and self._importance is not None
+                             and self._importance.score(vec) >= UNSURE_GAP)
                 out.append({
                     "id": m.entry_id,
                     "subject": m.subject,
                     "snippet": snippet(m.body),
+                    "received": m.received.isoformat() if m.received else None,
                     "folder": top.folder,
                     "unsure": second is not None and (top.score - second.score) < UNSURE_GAP,
                     "second": second.folder if second else None,
-                    # 旗がまだ無く、「ふつう」より「大事」のお手本に、迷いの幅以上近いときだけ印を付ける
-                    "important": (not m.flagged and self._importance is not None
-                                  and self._importance.score(vec) >= UNSURE_GAP),
+                    "flagged": m.flagged,
+                    "important": important,
+                    "bulk": m.bulk_reason is not None,  # 配信メール（メルマガ・宣伝・一斉のお知らせ）
+                    "bulkReason": m.bulk_reason,  # 何で見分けたか（ヘッダーの名前）
+                    # 画面のどこに出すか: 配信メールは下の箱へ。旗付き・大事かもは配信でも上に残す
+                    "group": "bulk" if m.bulk_reason and not m.flagged and not important else "main",
                 })
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ",
-                "targets": self._targets}
+                "targets": self._targets, "bulkFolder": load_settings().get("bulk_folder")}
+
+    def move_bulk(self, entry_ids: list[str], folder: str) -> dict:
+        """配信メールを、人が選んだフォルダへまとめて移す（「まとめて移す」を押したときだけ）。
+
+        振り分けのお手本には足さない。移す先は設定ファイルに覚えておく。
+        """
+        ids = [i for i in entry_ids if i in self._last]
+        if not ids:
+            raise LookupError("移す配信メールがありません")
+
+        def work(o: OutlookMover):
+            o.folder(folder, self._store)  # 無いフォルダなら、ここで止まる（1通も移さない）
+            moved, failed = 0, 0
+            for i in ids:
+                try:
+                    o.move(i, folder, store=self._store)
+                    moved += 1
+                except Exception:
+                    failed += 1
+            return moved, failed
+
+        moved, failed = self._outlook(work)
+        for i in ids:
+            self._last.pop(i, None)
+        s = load_settings()
+        s["bulk_folder"] = folder
+        SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+        info = {"count": moved, "failed": failed, "folder": folder}
+        try:
+            result = self.mails()
+        except Exception as e:
+            return {"bulkMoved": info, "folders": self._folders(), "listError": str(e)}
+        result.update({"bulkMoved": info, "folders": self._folders()})
+        return result
 
     def move(self, entry_id: str, folder: str) -> dict:
         """人が「移す」を押したメールを、選んだフォルダへ移す。移したメールは、すぐにお手本に加える。"""
@@ -222,7 +264,8 @@ def check(api: Api) -> None:
         mails = api.mails()["mails"]
         text = (f"OK お手本 {sum(f['count'] for f in folders)} 通（{len(folders)} フォルダ）、"
                 f"届いたメール {len(mails)} 通、迷っています {sum(m['unsure'] for m in mails)} 通、"
-                f"旗 {learned['flagged']} 通、大事かも {sum(m['important'] for m in mails)} 通")
+                f"旗 {learned['flagged']} 通、大事かも {sum(m['important'] for m in mails)} 通、"
+                f"配信メール {sum(m['bulk'] for m in mails)} 通（箱へ {sum(m['group'] == 'bulk' for m in mails)} 通）")
     except Exception as e:
         text = f"NG {type(e).__name__}: {e}"
     log.parent.mkdir(parents=True, exist_ok=True)
