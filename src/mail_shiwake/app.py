@@ -97,13 +97,17 @@ class Api:
         if missing:
             where = (f"データファイル「{self._store}」の一番上" if self._store
                      else "受信トレイの下（作れないときは、受信トレイと同じ並び）")
-            return {"folders": [], "missing": missing, "where": where}
+            return {"folders": [], "missing": missing, "where": where,
+                    "nextSteps": [{"action": "create_folders", "folders": missing, "where": where},
+                                  {"action": "choose_targets"}]}
         read, flagged = got
         examples = {f: [(m.subject, m.body) for m in ms] for f, ms in read.items()}
         if not any(examples.values()):  # フォルダはあるが、お手本のメールが1通も無い
             with self._lock:
                 self._examples = examples
-            return {"folders": self._folders(), "empty": True}
+            return {"folders": self._folders(), "empty": True,
+                    "nextSteps": [{"action": "add_examples", "folders": list(self._targets)},
+                                  {"action": "choose_targets"}]}
         with self._lock:
             self._examples = examples
             self._flags = {f: [m.flagged for m in ms] for f, ms in read.items()}
@@ -114,7 +118,9 @@ class Api:
                                                                  prompt="classification")
                                      if flagged else np.zeros((0, 768), dtype=np.float32))
             self._build_importance()
-            return {"folders": self._folders(), "flagged": len(flagged), "minFlagged": MIN_FLAGGED}
+            steps = ([{"action": "flag_more", "have": len(flagged), "need": MIN_FLAGGED}]
+                     if len(flagged) < MIN_FLAGGED else [])
+            return {"folders": self._folders(), "flagged": len(flagged), "minFlagged": MIN_FLAGGED, "nextSteps": steps}
 
     def _build_importance(self) -> None:
         """大事の見分けを作り直す。「ふつう」は振り分け先の旗の無いお手本（振り分けで計算した数字の列を使い回す）。"""
@@ -179,7 +185,8 @@ class Api:
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ",
                 "targets": self._targets, "bulkFolder": load_settings().get("bulk_folder"),
                 # 判断に使った線（画面の「迷っています」「大事かも」は、この値と比べて決めている）
-                "thresholds": {"unsureGap": UNSURE_GAP, "importantGap": UNSURE_GAP, "minFlagged": MIN_FLAGGED}}
+                "thresholds": {"unsureGap": UNSURE_GAP, "importantGap": UNSURE_GAP, "minFlagged": MIN_FLAGGED},
+                "nextSteps": mail_steps(out, load_settings().get("bulk_folder"))}
 
     def move_bulk(self, entry_ids: list[str], folder: str) -> dict:
         """配信メールを、人が選んだフォルダへまとめて移す（「まとめて移す」を押したときだけ）。
@@ -240,6 +247,23 @@ class Api:
 URL = re.compile(r"<?(?:https?|mailto):[^\s>]*>?")  # HTML メールの本文の頭に並びがちな、画像やリンクの URL
 
 
+def mail_steps(mails: list[dict], bulk_folder: str | None) -> list[dict]:
+    """届いたメールについて、次にできる操作（画面の文の代わりに、記号と数で）。"""
+    main = [m for m in mails if m["group"] == "main"]
+    bulk = [m for m in mails if m["group"] == "bulk"]
+    steps = []
+    if any(m["important"] for m in main):
+        steps.append({"action": "check_important", "count": sum(m["important"] for m in main)})
+    if any(m["unsure"] for m in main):
+        steps.append({"action": "review_unsure", "count": sum(m["unsure"] for m in main)})
+    if main:
+        steps.append({"action": "move", "count": len(main)})  # 提案を見て1通ずつ移す
+    if bulk:
+        steps.append({"action": "move_bulk", "count": len(bulk), "folder": bulk_folder} if bulk_folder
+                     else {"action": "choose_bulk_folder", "count": len(bulk)})
+    return steps
+
+
 def snippet(body: str) -> str:
     """カードに出す本文の頭（URL は省き、改行や空白はまとめて1つにする）。"""
     return " ".join(URL.sub(" ", body).split())[:SNIPPET_CHARS]
@@ -296,6 +320,7 @@ def export(api: Api) -> dict:
            "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds")}
     learned = api.learn()
     out["learn"] = learned
+    out["nextSteps"] = learned.get("nextSteps", [])
     if learned.get("missing"):
         out["status"] = "missing_folders"
         return out
@@ -303,7 +328,10 @@ def export(api: Api) -> dict:
         out["status"] = "no_examples"
         return out
     out["status"] = "ok"
-    out.update(api.mails())
+    got = api.mails()
+    steps = learned.get("nextSteps", []) + got.pop("nextSteps", [])
+    out.update(got)
+    out["nextSteps"] = steps
     return out
 
 
