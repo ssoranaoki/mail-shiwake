@@ -34,6 +34,7 @@ Set-Content -Path dist\mail-shiwake\mail-shiwake.exe.config -Encoding UTF8 -Valu
 '@
 # exe に入れた部品のライセンス文を集める（MIT・BSD・Apache-2.0 などは、一緒に配るときに添える決まりがある）
 uv run python packaging/collect_licenses.py dist/mail-shiwake/THIRD-PARTY-LICENSES
+if ($LASTEXITCODE -ne 0) { throw "部品のライセンス文を集められませんでした" }
 $zip = "dist\mail-shiwake-$version-windows.zip"
 if (Test-Path $zip) { Remove-Item $zip }
 Compress-Archive -Path dist\mail-shiwake -DestinationPath $zip
