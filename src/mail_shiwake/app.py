@@ -560,7 +560,11 @@ def main() -> None:
                     help="窓を開かずに、お手本を覚えてメールを読むところまで確かめ、結果を ~/.mail-shiwake/check.log に書く")
     ap.add_argument("--json", nargs="?", const="-", default=None, metavar="FILE",
                     help="窓を開かずに、提案をデータ（JSON）で出す。FILE を付けるとそのファイルに、付けないと画面に書く。メールは移さない")
+    ap.add_argument(newmail.FLAG, type=int, default=None, help=argparse.SUPPRESS)  # 新着の知らせを待つ子プロセス（newmail.py）
     args = ap.parse_args()
+    if args.listen_newmail is not None:
+        newmail.child(args.listen_newmail)
+        return
 
     def config():
         s = load_settings()  # コマンドで指定したものは、設定ファイルより優先する
