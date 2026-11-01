@@ -581,7 +581,8 @@ def main() -> None:
             Path(args.json).write_text(text + "\n", encoding="utf-8")
         return
     api._window = webview.create_window("メール仕分け", html=page(), js_api=api,
-                                        width=1180, height=760, min_size=(760, 520))
+                                        width=1180, height=760, min_size=(760, 520),
+                                        maximized=True)  # 起動したときは画面いっぱい（2026-11-01 ユーザー指示）。元に戻すと 1180×760
     webview.start()
 
 
