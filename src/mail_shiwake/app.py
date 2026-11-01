@@ -22,6 +22,7 @@ import webview
 
 import numpy as np
 
+from .cache import CachedEmbedder
 from .embedder import Embedder
 from .importance import MIN_FLAGGED, Importance
 from .mover import OutlookMover
@@ -133,7 +134,7 @@ class Api:
             self._flags = {f: [m.flagged for m in ms] for f, ms in read.items()}
             if self._sorter is None:
                 self._activity("モデルを読み込んでいます…（はじめてのときはダウンロードに数分かかります）")
-                self._sorter = Sorter(Embedder())
+                self._sorter = Sorter(CachedEmbedder(Embedder()))  # 一度計算したメールは計算し直さない
             self._activity(f"お手本を覚えています（{sum(len(v) for v in self._examples.values())} 通）…")
             self._sorter.learn(self._examples)
             self._flagged_vectors = (self._sorter.embedder.embed([mail_text(m.subject, m.body) for m in flagged],
