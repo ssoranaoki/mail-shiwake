@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 import threading
 from pathlib import Path
 
@@ -154,8 +155,8 @@ class Api:
                 top = ranked[0]
                 second = ranked[1] if len(ranked) > 1 else None  # フォルダが1つだけなら迷いようがない
                 # 旗がまだ無く、「ふつう」より「大事」のお手本に、迷いの幅以上近いときだけ印を付ける
-                important = (not m.flagged and self._importance is not None
-                             and self._importance.score(vec) >= UNSURE_GAP)
+                imp_score = self._importance.score(vec) if self._importance is not None else None
+                important = not m.flagged and imp_score is not None and imp_score >= UNSURE_GAP
                 out.append({
                     "id": m.entry_id,
                     "subject": m.subject,
@@ -164,6 +165,10 @@ class Api:
                     "folder": top.folder,
                     "unsure": second is not None and (top.score - second.score) < UNSURE_GAP,
                     "second": second.folder if second else None,
+                    # 近さの数字（コサイン類似度）。画面には出さないが、データには残す
+                    "scores": [{"folder": r.folder, "score": round(r.score, 4)} for r in ranked],
+                    "gap": round(top.score - second.score, 4) if second else None,  # 1位と2位の差（unsureGap 未満で迷う）
+                    "importanceScore": round(imp_score, 4) if imp_score is not None else None,  # プラスなら大事寄り
                     "flagged": m.flagged,
                     "important": important,
                     "bulk": m.bulk_reason is not None,  # 配信メール（メルマガ・宣伝・一斉のお知らせ）
@@ -172,7 +177,9 @@ class Api:
                     "group": "bulk" if m.bulk_reason and not m.flagged and not important else "main",
                 })
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ",
-                "targets": self._targets, "bulkFolder": load_settings().get("bulk_folder")}
+                "targets": self._targets, "bulkFolder": load_settings().get("bulk_folder"),
+                # 判断に使った線（画面の「迷っています」「大事かも」は、この値と比べて決めている）
+                "thresholds": {"unsureGap": UNSURE_GAP, "importantGap": UNSURE_GAP, "minFlagged": MIN_FLAGGED}}
 
     def move_bulk(self, entry_ids: list[str], folder: str) -> dict:
         """配信メールを、人が選んだフォルダへまとめて移す（「まとめて移す」を押したときだけ）。
@@ -273,6 +280,33 @@ def check(api: Api) -> None:
     print(text)
 
 
+SCHEMA = 1  # --json で出すデータの形の版（項目の意味を変えたら上げる。説明は docs/data.md）
+
+
+def export(api: Api) -> dict:
+    """窓を開かずに、お手本を覚えて提案を出し、そのままのデータを返す（--json。読むだけで、メールは移さない）。"""
+    from datetime import datetime, timezone
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        app_version = version("mail-shiwake")
+    except PackageNotFoundError:
+        app_version = None
+    out = {"schema": SCHEMA, "app": "mail-shiwake", "version": app_version,
+           "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+    learned = api.learn()
+    out["learn"] = learned
+    if learned.get("missing"):
+        out["status"] = "missing_folders"
+        return out
+    if learned.get("empty"):
+        out["status"] = "no_examples"
+        return out
+    out["status"] = "ok"
+    out.update(api.mails())
+    return out
+
+
 def load_settings() -> dict:
     """設定ファイルを読む。無ければ、ふつうの設定で作っておく（あとで人が直せるように）。"""
     if not SETTINGS.exists():
@@ -288,6 +322,8 @@ def main() -> None:
     ap.add_argument("--targets", default=None, help="振り分け先のフォルダ（カンマ区切り）。中のメールがお手本になる")
     ap.add_argument("--check", action="store_true",
                     help="窓を開かずに、お手本を覚えてメールを読むところまで確かめ、結果を ~/.mail-shiwake/check.log に書く")
+    ap.add_argument("--json", nargs="?", const="-", default=None, metavar="FILE",
+                    help="窓を開かずに、提案をデータ（JSON）で出す。FILE を付けるとそのファイルに、付けないと画面に書く。メールは移さない")
     args = ap.parse_args()
 
     def config():
@@ -300,6 +336,14 @@ def main() -> None:
     api = Api(*config(), reload=config)
     if args.check:
         check(api)
+        return
+    if args.json is not None:
+        text = json.dumps(export(api), ensure_ascii=False, indent=2)
+        if args.json == "-":
+            sys.stdout.reconfigure(encoding="utf-8")
+            print(text)
+        else:
+            Path(args.json).write_text(text + "\n", encoding="utf-8")
         return
     webview.create_window("メール仕分け", html=page(), js_api=api,
                           width=1180, height=760, min_size=(760, 520))
