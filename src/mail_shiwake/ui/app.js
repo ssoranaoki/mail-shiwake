@@ -441,6 +441,9 @@
       showMails(data);
       $("auto-toggle").checked = data.autoMove.enabled;
       $("auto-toggle").disabled = false;
+      $("refresh").value = String(data.refreshMinutes);
+      $("refresh").disabled = false;
+      schedule(data.refreshMinutes);
       // スイッチがオンなら、信頼のあるフォルダへの確かな提案を自動で移す
       if (data.autoMove.enabled && data.mails.some((m) => m.autoReady)) await runAuto();
     } catch (e) {
@@ -448,8 +451,40 @@
     } finally {
       $("learn").disabled = false;
       end();
+      if (refreshMinutes) schedule(refreshMinutes); // 失敗しても次の回を予約する（Outlook が閉じていた、など）
     }
   }
+
+  // 決まった間隔で「お手本を覚える」を繰り返す。人が操作の途中なら、その回は飛ばす
+  let timer = null;
+  let refreshMinutes = 0;
+  function schedule(minutes) {
+    refreshMinutes = minutes;
+    clearTimeout(timer);
+    $("refresh-next").textContent = "";
+    if (!minutes) return;
+    const at = new Date(Date.now() + minutes * 60000);
+    $("refresh-next").textContent = `次は ${at.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}`;
+    timer = setTimeout(() => {
+      if (userIsEditing()) {
+        $("status").textContent = "操作の途中なので、読み直しは次の回にします。";
+        schedule(minutes);
+        return;
+      }
+      load(); // load の最後で次の回を予約する
+    }, minutes * 60000);
+  }
+  function userIsEditing() {
+    return busy > 0 || $("picker").open
+      || document.querySelector(".card.rechosen") !== null
+      || document.querySelector("#mails input[type=checkbox]:not(:checked), #bulk input[type=checkbox]:not(:checked)") !== null;
+  }
+  $("refresh").addEventListener("change", async (e) => {
+    const minutes = Number(e.target.value);
+    await window.pywebview.api.set_refresh(minutes);
+    schedule(minutes);
+    $("status").textContent = minutes ? `${minutes} 分ごとに読み直します。` : "読み直しをやめました。";
+  });
 
   $("learn").addEventListener("click", load);
   $("auto-toggle").addEventListener("change", async (e) => {

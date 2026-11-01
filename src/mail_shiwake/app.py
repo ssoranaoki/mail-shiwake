@@ -39,7 +39,9 @@ DEFAULT_SETTINGS = {
     "targets": ["請求書", "注文", "問い合わせ", "お知らせ"],  # 振り分け先（中のメールがお手本になる）
     "bulk_folder": None,  # 配信メールをまとめて移す先（画面で選ぶと覚える）
     "auto_move": False,  # 信頼のあるフォルダへの確かな提案を、起動したときに自動で移す（窓のスイッチで切り替える）
+    "refresh_minutes": 0,  # 窓を開いている間、この分ごとに「お手本を覚える」を繰り返す（0 はしない）
 }
+REFRESH_CHOICES = (0, 5, 15, 30, 60)  # 窓で選べる読み直しの間隔（分）
 EXAMPLES_PER_FOLDER = 50  # フォルダごとに覚えるお手本の数（新しい順）
 MIN_EXAMPLES = 3  # 振り分け先ごとのお手本がこれより少ないと、「あと何通」と案内する（0通のフォルダは提案に出ない）
 FLAG_SCAN = 300  # 旗付きのお手本を探すとき、フォルダごとに見る新しいメールの数
@@ -239,6 +241,7 @@ class Api:
                 # 判断に使った線（画面の「迷っています」「大事かも」は、この値と比べて決めている）
                 "thresholds": {"unsureGap": UNSURE_GAP, "importantGap": UNSURE_GAP, "minFlagged": MIN_FLAGGED},
                 "nextSteps": mail_steps(out, load_settings().get("bulk_folder")),
+                "refreshMinutes": int(load_settings().get("refresh_minutes") or 0),  # 窓が読み直す間隔（0 はしない）
                 "autoMove": {"enabled": bool(load_settings().get("auto_move")),
                              "trustedFolders": [f for f in self._targets if self._trust.status(f)["trusted"]]}}
 
@@ -296,6 +299,16 @@ class Api:
             raise LookupError("そのメールは、いまの一覧にありません")
         self._activity("Outlook でメールを開いています…")
         self._outlook(lambda o: o.open(entry_id, self._folder, store=self._store))
+
+    def set_refresh(self, minutes: int) -> dict:
+        """読み直しの間隔（分）を設定ファイルに覚える。0 はしない。"""
+        minutes = int(minutes)
+        if minutes not in REFRESH_CHOICES:
+            raise ValueError(f"読み直しの間隔は {REFRESH_CHOICES} のどれかです")
+        s = load_settings()
+        s["refresh_minutes"] = minutes
+        SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"minutes": minutes}
 
     def set_auto_move(self, enabled: bool) -> dict:
         """「自動で移す」のスイッチ。設定ファイルに覚える。"""

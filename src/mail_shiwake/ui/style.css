@@ -23,6 +23,9 @@ button { font: inherit; cursor: pointer; }
 .spin { width: 12px; height: 12px; border: 2px solid #c9daf0; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--accent); } }
+.refresh { display: inline-flex; align-items: center; gap: 6px; font-size: .9rem; font-weight: 700; }
+.refresh select { font: inherit; font-weight: 400; border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; background: var(--panel); color: var(--ink); }
+.refresh-next { font-weight: 400; color: var(--soft); font-size: .82rem; }
 .switch { display: inline-flex; align-items: center; gap: 8px; font-size: .9rem; font-weight: 700; color: var(--ink); cursor: pointer; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .switch .knob { width: 38px; height: 22px; border-radius: 999px; background: #c7ced6; position: relative; transition: background .15s; }

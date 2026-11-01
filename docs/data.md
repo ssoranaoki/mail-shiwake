@@ -26,6 +26,7 @@ mail-shiwake --json suggestions.json  # ファイルに書く（exe ではこち
 | `folderName` | 文字 | 届いたメールを読んだフォルダ。`ok` のときだけ |
 | `targets` | 文字の配列 | 振り分け先のフォルダ。`ok` のときだけ |
 | `bulkFolder` | 文字または null | 配信メールをまとめて移す先（窓で選んだもの）。`ok` のときだけ |
+| `refreshMinutes` | 数 | 窓が「お手本を覚える」を繰り返す間隔（分）。0 はしない。`ok` のときだけ |
 | `autoMove` | オブジェクト | 「自動で移す」の状態。`enabled`（スイッチがオンか）・`trustedFolders`（信頼のあるフォルダ）。`ok` のときだけ |
 | `thresholds` | オブジェクト | 判断に使った線。`unsureGap`（1位と2位の差がこれ未満なら迷う）・`importantGap`（大事の度合いがこれ以上なら大事かも）・`minFlagged`（旗付きのお手本がこれ未満なら大事を見分けない）。`ok` のときだけ |
 | `mails` | 配列 | 届いたメール1通ずつ（下の表）。新しい順。`ok` のときだけ |

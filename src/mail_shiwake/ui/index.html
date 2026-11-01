@@ -18,6 +18,12 @@
     <button type="button" id="choose" class="secondary" disabled>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>振り分け先を選ぶ
     </button>
+    <label class="refresh" title="窓を開いている間、この間隔で「お手本を覚える」を繰り返します">読み直す
+      <select id="refresh" disabled>
+        <option value="0">しない</option><option value="5">5分ごと</option><option value="15">15分ごと</option>
+        <option value="30">30分ごと</option><option value="60">60分ごと</option>
+      </select><span id="refresh-next" class="refresh-next"></span>
+    </label>
     <label class="switch" title="信頼のあるフォルダへの確かな提案を、起動したときに自動で移します">
       <input type="checkbox" id="auto-toggle" disabled><span class="knob" aria-hidden="true"></span>自動で移す
     </label>
