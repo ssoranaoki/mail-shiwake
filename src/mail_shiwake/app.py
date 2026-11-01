@@ -27,15 +27,18 @@ from .embedder import REVISION, Embedder
 from .importance import MIN_FLAGGED, Importance
 from .mover import OutlookMover
 from .sorter import Sorter, mail_text
+from .trust import Trust
 
 UI = Path(__file__).resolve().parent / "ui"
 SETTINGS = Path.home() / ".mail-shiwake" / "settings.json"  # 起動の設定（ダブルクリックで起動するときに使う）
+TRUST = SETTINGS.parent / "trust.json"  # フォルダごとの信頼（当たり・外れだけ。件名は入れない）
 VECTORS = SETTINGS.parent / "vectors" / f"embeddinggemma-2-{REVISION[:12]}-q4.npz"  # 覚えた数字の列（文章は入れない）
 DEFAULT_SETTINGS = {
     "store": None,  # 読むデータファイルの名前。null なら受信トレイ
     "folder": "",  # 届いたメールのフォルダ（"" なら受信トレイそのもの）
     "targets": ["請求書", "注文", "問い合わせ", "お知らせ"],  # 振り分け先（中のメールがお手本になる）
     "bulk_folder": None,  # 配信メールをまとめて移す先（画面で選ぶと覚える）
+    "auto_move": False,  # 信頼のあるフォルダへの確かな提案を、起動したときに自動で移す（窓のスイッチで切り替える）
 }
 EXAMPLES_PER_FOLDER = 50  # フォルダごとに覚えるお手本の数（新しい順）
 MIN_EXAMPLES = 3  # 振り分け先ごとのお手本がこれより少ないと、「あと何通」と案内する（0通のフォルダは提案に出ない）
@@ -62,6 +65,10 @@ class Api:
         self._flags: dict[str, list[bool]] = {}  # 振り分け先のお手本ごとの旗（_examples と同じ並び）
         self._flagged_vectors = np.zeros((0, 768), dtype=np.float32)  # 旗付きメール（大事のお手本）の数字の列
         self._importance: Importance | None = None
+        self._trust = Trust(TRUST)
+        self._suggest: dict[str, tuple[str, bool]] = {}  # 最後の提案（EntryID → 提案したフォルダ、迷っていないか）
+        self._auto_ready: dict[str, str] = {}
+        self._auto_log: list[dict] = []  # この窓で自動で移したメール（元に戻すため。件名・本文はメモリの中だけ）
         self._window = None  # 窓（作業の様子を知らせる先）。--check・--json では None
 
     def _activity(self, text: str) -> None:
@@ -90,7 +97,8 @@ class Api:
         out = []
         for f in self._targets:
             n = len(self._examples.get(f, []))
-            out.append({"name": f, "count": n, "needed": max(0, MIN_EXAMPLES - n)})  # needed: あと何通あるとよいか
+            out.append({"name": f, "count": n, "needed": max(0, MIN_EXAMPLES - n),  # needed: あと何通あるとよいか
+                        "trust": self._trust.status(f)})  # 信頼（最近の当たり・外れ）
         return out
 
     def learn(self) -> dict:
@@ -184,6 +192,8 @@ class Api:
         mails = self._outlook(lambda o: o.read(self._folder, limit=50, store=self._store))
         with self._lock:
             self._last = {m.entry_id: (m.subject, m.body, m.flagged) for m in mails}
+            self._suggest = {}
+            self._auto_ready: dict[str, str] = {}  # 自動で移してよいメール（EntryID → 提案したフォルダ）
             out = []
             for n, m in enumerate(mails, 1):
                 if n % 5 == 1:
@@ -216,12 +226,27 @@ class Api:
                 })
                 # 提案どおりにまとめて移してよいか（迷っている・大事かもは、1通ずつ確かめてもらう）
                 out[-1]["autoMove"] = out[-1]["group"] == "main" and not out[-1]["unsure"] and not important
+                # 自動で移してよいか（まとめて移せる提案で、旗が無く、提案先のフォルダに信頼がある）
+                out[-1]["autoReady"] = (out[-1]["autoMove"] and not m.flagged
+                                        and self._trust.status(top.folder)["trusted"]
+                                        and not self._trust.skipped(m.subject, m.body))  # 元に戻したメールは除く
+                if out[-1]["autoReady"]:
+                    self._auto_ready[m.entry_id] = top.folder
+        self._suggest = {m["id"]: (m["folder"], m["autoMove"]) for m in out}
         self._sorter.embedder.save()
         return {"mails": out, "source": self._store or "受信トレイ", "folderName": self._folder or "受信トレイ",
                 "targets": self._targets, "bulkFolder": load_settings().get("bulk_folder"),
                 # 判断に使った線（画面の「迷っています」「大事かも」は、この値と比べて決めている）
                 "thresholds": {"unsureGap": UNSURE_GAP, "importantGap": UNSURE_GAP, "minFlagged": MIN_FLAGGED},
-                "nextSteps": mail_steps(out, load_settings().get("bulk_folder"))}
+                "nextSteps": mail_steps(out, load_settings().get("bulk_folder")),
+                "autoMove": {"enabled": bool(load_settings().get("auto_move")),
+                             "trustedFolders": [f for f in self._targets if self._trust.status(f)["trusted"]]}}
+
+    def _record_trust(self, entry_id: str, chosen: str) -> None:
+        """人が移したメールについて、提案したフォルダの当たり・外れを貯める（迷っていない提案だけ）。"""
+        suggested, sure = self._suggest.get(entry_id, (None, False))
+        if suggested is not None and sure:
+            self._trust.record(suggested, chosen == suggested)
 
     def move_many(self, moves: list[dict]) -> dict:
         """上の一覧のメールを、それぞれ選ばれたフォルダへまとめて移す（「まとめて移す」を押したときだけ）。
@@ -249,6 +274,7 @@ class Api:
         done, failed = self._outlook(work)
         with self._lock:
             for i, f in done:
+                self._record_trust(i, f)
                 subject, body, flagged = self._last.pop(i)
                 self._examples.setdefault(f, []).append((subject, body))
                 self._flags.setdefault(f, []).append(flagged)
@@ -262,6 +288,75 @@ class Api:
         except Exception as e:
             return {"manyMoved": info, "folders": self._folders(), "listError": str(e)}
         result.update({"manyMoved": info, "folders": self._folders()})
+        return result
+
+    def set_auto_move(self, enabled: bool) -> dict:
+        """「自動で移す」のスイッチ。設定ファイルに覚える。"""
+        s = load_settings()
+        s["auto_move"] = bool(enabled)
+        SETTINGS.write_text(json.dumps(s, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"enabled": bool(enabled)}
+
+    def auto_move(self) -> dict:
+        """スイッチがオンのとき、信頼のあるフォルダへの確かな提案（autoReady）を自動で移す。移したメールはお手本に加える。"""
+        if not load_settings().get("auto_move"):
+            raise RuntimeError("「自動で移す」がオフです")
+        pairs = [(i, f) for i, f in self._auto_ready.items() if i in self._last]
+
+        def work(o: OutlookMover):
+            done, failed = [], 0
+            for n, (i, f) in enumerate(pairs, 1):
+                self._activity(f"自動で移しています（{n} / {len(pairs)} 通）…")
+                try:
+                    done.append((i, f, o.move(i, f, store=self._store)))
+                except Exception:
+                    failed += 1
+            return done, failed
+
+        done, failed = self._outlook(work) if pairs else ([], 0)
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        items = []
+        with self._lock:
+            for i, f, new_id in done:
+                subject, body, flagged = self._last.pop(i)
+                self._examples.setdefault(f, []).append((subject, body))
+                self._flags.setdefault(f, []).append(flagged)
+                entry = {"id": new_id, "subject": subject, "folder": f, "movedAt": now}
+                self._auto_log.append({**entry, "_body": body, "_flagged": flagged})
+                items.append(entry)
+            if done:
+                self._activity("お手本を覚え直しています…")
+                self._sorter.learn(self._examples)
+                self._build_importance()
+        info = {"count": len(done), "failed": failed, "items": items}
+        result = self.mails()
+        result.update({"autoMoved": info, "folders": self._folders()})
+        return result
+
+    def undo_auto(self, moved_id: str) -> dict:
+        """自動で移したメールを、届いたメールのフォルダへ戻す。そのフォルダの「外れ」として信頼に記録し、お手本からも外す。"""
+        entry = next((e for e in self._auto_log if e["id"] == moved_id), None)
+        if entry is None:
+            raise LookupError("そのメールは、自動で移したメールの一覧にありません")
+        self._activity("元に戻しています…")
+        self._outlook(lambda o: o.move(moved_id, self._folder, store=self._store))
+        self._auto_log.remove(entry)
+        self._trust.record(entry["folder"], False)
+        self._trust.skip(entry["subject"], entry["_body"])
+        with self._lock:
+            ex, fl = self._examples.get(entry["folder"], []), self._flags.get(entry["folder"], [])
+            pair = (entry["subject"], entry["_body"])
+            if pair in ex:
+                k = len(ex) - 1 - ex[::-1].index(pair)  # いちばん後ろに足したもの
+                del ex[k]
+                if k < len(fl):
+                    del fl[k]
+            self._activity("お手本を覚え直しています…")
+            self._sorter.learn(self._examples)
+            self._build_importance()
+        result = self.mails()
+        result.update({"undone": {"subject": entry["subject"], "folder": entry["folder"]}, "folders": self._folders()})
         return result
 
     def move_bulk(self, entry_ids: list[str], folder: str) -> dict:
@@ -308,6 +403,7 @@ class Api:
             raise LookupError("そのメールは、いまの一覧にありません")
         self._activity(f"Outlook でメールを「{folder}」へ移しています…")
         self._outlook(lambda o: o.move(entry_id, folder, store=self._store))
+        self._record_trust(entry_id, folder)
         subject, body, flagged = self._last.pop(entry_id)
         with self._lock:
             self._examples.setdefault(folder, []).append((subject, body))

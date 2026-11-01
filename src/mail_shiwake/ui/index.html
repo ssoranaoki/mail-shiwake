@@ -18,6 +18,9 @@
     <button type="button" id="choose" class="secondary" disabled>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>振り分け先を選ぶ
     </button>
+    <label class="switch" title="信頼のあるフォルダへの確かな提案を、起動したときに自動で移します">
+      <input type="checkbox" id="auto-toggle" disabled><span class="knob" aria-hidden="true"></span>自動で移す
+    </label>
     <span class="offline"><span class="dot"></span>オフラインで動作中</span>
     <span id="activity" class="activity" role="status" aria-live="polite" hidden><span class="spin" aria-hidden="true"></span><span id="activity-text"></span></span>
   </div>
@@ -30,6 +33,7 @@
   <section class="list" aria-label="届いたメール">
     <p class="list-title" id="list-title">届いたメール</p>
     <div id="status" class="status" role="status">読み込み中…</div>
+    <div id="auto-log" class="auto-log" hidden></div>
     <div id="main-actions" class="main-actions"></div>
     <ul id="mails" class="mails"></ul>
     <div id="bulk"></div>

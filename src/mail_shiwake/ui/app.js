@@ -39,6 +39,15 @@
       li.innerHTML = ICON_FOLDER;
       li.firstChild.style.color = color(f.name);
       li.append(el("span", "name", f.name), el("span", "count", `(${f.count})`));
+      // 信頼（最近の当たり・外れ）。信頼があれば自動で移す対象になる
+      if (f.trust) {
+        const t = f.trust;
+        li.append(t.trusted
+          ? el("span", "trust ok", "自動 ✓")
+          : el("span", "trust", t.count ? `信頼 ${t.count - t.misses} / ${t.window}` : ""));
+        if (t.trusted) li.title = `最近の ${t.count} 通で選び直し ${t.misses} 通。自動で移す対象です`;
+        else if (t.count) li.title = `最近の ${t.count} 通で選び直し ${t.misses} 通（${t.window} 通で選び直しが1通以下になると、自動で移す対象になります）`;
+      }
       // お手本が少ないフォルダは、あと何通あるとよいかを出す（0通のフォルダは提案に出てこない）
       if (f.needed) {
         li.classList.add("few");
@@ -241,6 +250,57 @@
     $("status").append(box);
   }
 
+  // 自動で移したメールの一覧（この窓を開いている間）。1通ずつ「元に戻す」
+  const autoLog = [];
+  function showAutoLog() {
+    const box = $("auto-log");
+    box.textContent = "";
+    if (!autoLog.length) { box.hidden = true; return; }
+    box.hidden = false;
+    const det = el("details");
+    det.append(el("summary", null, `自動で ${autoLog.length} 通移しました（中を見て、違っていたら元に戻せます）`));
+    const ul = el("ul");
+    autoLog.forEach((a) => {
+      const li = el("li");
+      const undo = el("button", "plain", "元に戻す");
+      undo.type = "button";
+      undo.addEventListener("click", () => undoAuto(a, undo));
+      li.append(el("span", "subject", a.subject || "（件名なし）"), el("span", "to", `→ ${a.folder}`), undo);
+      ul.append(li);
+    });
+    det.append(ul);
+    box.append(det);
+  }
+
+  async function runAuto() {
+    begin("自動で移しています…");
+    let data;
+    try { data = await window.pywebview.api.auto_move(); } finally { end(); }
+    showFolders(data.folders);
+    autoLog.push(...data.autoMoved.items);
+    showMails(data);
+    showAutoLog();
+    const r = data.autoMoved;
+    $("status").textContent = `自動で ${r.count} 通移しました。` + (r.failed ? `${r.failed} 通は移せませんでした。` : "") + "違っていたら「元に戻す」を押してください。";
+  }
+
+  async function undoAuto(a, btn) {
+    btn.disabled = true;
+    try {
+      begin("元に戻しています…");
+      let data;
+      try { data = await window.pywebview.api.undo_auto(a.id); } finally { end(); }
+      autoLog.splice(autoLog.indexOf(a), 1);
+      showFolders(data.folders);
+      showMails(data);
+      showAutoLog();
+      $("status").textContent = `「${a.subject}」を元に戻しました。このメールは、これからは自動では移しません。「${a.folder}」の信頼も1つ下げました。`;
+    } catch (e) {
+      btn.disabled = false;
+      $("status").textContent = `元に戻せませんでした：${e && e.message ? e.message : e}`;
+    }
+  }
+
   async function moveMany(chosen) {
     const moves = chosen.map((c) => ({ id: c.m.id, folder: c.pickOf() }));
     document.querySelectorAll("#mails button, #mails select, #mails input, #main-actions button").forEach((x) => (x.disabled = true));
@@ -354,7 +414,12 @@
         ? `大事なメールの見分け：Outlook で大事なメールに旗を付けてください（いま ${learned.flagged} 通。${learned.minFlagged} 通以上で「★ 大事かも」の印が付きます）。`
         : "";
       $("status").textContent = "Outlook のメールを読んでいます…";
-      showMails(await api.mails());
+      const data = await api.mails();
+      showMails(data);
+      $("auto-toggle").checked = data.autoMove.enabled;
+      $("auto-toggle").disabled = false;
+      // スイッチがオンなら、信頼のあるフォルダへの確かな提案を自動で移す
+      if (data.autoMove.enabled && data.mails.some((m) => m.autoReady)) await runAuto();
     } catch (e) {
       $("status").textContent = `うまく読めませんでした：${e && e.message ? e.message : e}`;
     } finally {
@@ -364,6 +429,14 @@
   }
 
   $("learn").addEventListener("click", load);
+  $("auto-toggle").addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    await window.pywebview.api.set_auto_move(on);
+    $("status").textContent = on
+      ? "自動で移すをオンにしました。「自動 ✓」の付いたフォルダへの確かな提案を、起動したときと「お手本を覚える」のときに自動で移します。"
+      : "自動で移すをオフにしました。";
+    if (on) load();
+  });
   $("choose").addEventListener("click", openPicker);
   $("picker-save").addEventListener("click", savePicker);
   $("picker-cancel").addEventListener("click", () => $("picker").close());

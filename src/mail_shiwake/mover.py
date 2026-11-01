@@ -11,11 +11,11 @@ from .outlook import OL_MAIL, OutlookReader
 
 class OutlookMover(OutlookReader):
     def move(self, entry_id: str, dest_path: str, store: str | None = None) -> str:
-        """EntryID のメールを、dest_path のフォルダへ移す。移した先のフォルダの名前を返す。"""
+        """EntryID のメールを、dest_path のフォルダへ移す。移したあとのメールの EntryID を返す（元に戻すときに使う）。"""
         dest = self.folder(dest_path, store)
         # メールを ID で取り出す。公式資料では、ふつうデータファイルの印（StoreID）も渡す。届いたメールと移す先は同じデータファイル
         item = self._ns.GetItemFromID(entry_id, dest.StoreID)
         if item.Class != OL_MAIL:
             raise ValueError("メールではないものは移しません")
-        item.Move(dest)
-        return dest.Name
+        moved = item.Move(dest)  # MailItem.Move は、移したあとのメールを返す（EntryID が変わることがある）
+        return moved.EntryID
