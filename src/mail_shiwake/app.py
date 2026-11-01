@@ -60,6 +60,16 @@ class Api:
         self._flags: dict[str, list[bool]] = {}  # 振り分け先のお手本ごとの旗（_examples と同じ並び）
         self._flagged_vectors = np.zeros((0, 768), dtype=np.float32)  # 旗付きメール（大事のお手本）の数字の列
         self._importance: Importance | None = None
+        self._window = None  # 窓（作業の様子を知らせる先）。--check・--json では None
+
+    def _activity(self, text: str) -> None:
+        """いま何をしているかを、窓のボタンの横に出す（窓が無いときは何もしない）。"""
+        if self._window is None:
+            return
+        try:
+            self._window.run_js(f"window.setActivity && window.setActivity({json.dumps(text, ensure_ascii=False)})")
+        except Exception:  # 知らせが届かなくても、作業は続ける
+            pass
 
     def _outlook(self, work):
         """このスレッドで COM を準備して Outlook につなぎ、work(つないだ窓口) の結果を返す。"""
@@ -90,10 +100,15 @@ class Api:
             self._store, self._folder, self._targets = self._reload()
 
         def read_targets(o: OutlookMover):
+            self._activity("Outlook で振り分け先のフォルダを探しています…")
             missing = o.missing_folders([self._folder, *self._targets], store=self._store)
             if missing:
                 return missing, {}
-            read = {f: o.read(f, limit=EXAMPLES_PER_FOLDER, store=self._store) for f in self._targets}
+            read = {}
+            for f in self._targets:
+                self._activity(f"Outlook から「{f}」のお手本を読んでいます…")
+                read[f] = o.read(f, limit=EXAMPLES_PER_FOLDER, store=self._store)
+            self._activity("旗の付いたメールを探しています…")
             flagged = o.flagged([self._folder, *self._targets], scan=FLAG_SCAN, limit=FLAGGED_EXAMPLES,
                                 store=self._store)
             return [], (read, flagged)
@@ -117,7 +132,9 @@ class Api:
             self._examples = examples
             self._flags = {f: [m.flagged for m in ms] for f, ms in read.items()}
             if self._sorter is None:
+                self._activity("モデルを読み込んでいます…（はじめてのときはダウンロードに数分かかります）")
                 self._sorter = Sorter(Embedder())
+            self._activity(f"お手本を覚えています（{sum(len(v) for v in self._examples.values())} 通）…")
             self._sorter.learn(self._examples)
             self._flagged_vectors = (self._sorter.embedder.embed([mail_text(m.subject, m.body) for m in flagged],
                                                                  prompt="classification")
@@ -140,6 +157,7 @@ class Api:
         """振り分け先に選べるフォルダの一覧と、いま選んでいるもの（画面の「振り分け先を選ぶ」）。"""
         if self._reload is not None:
             self._store, self._folder, self._targets = self._reload()
+        self._activity("Outlook のフォルダを読んでいます…")
         folders = self._outlook(lambda o: o.mail_folders(store=self._store))
         folders = [f for f in folders if f["path"] != self._folder]  # 届いたメールのフォルダは選べない
         return {"folders": folders, "selected": list(self._targets)}
@@ -158,11 +176,14 @@ class Api:
         """届いたメールのフォルダを読み、1通ずつ提案を付けて返す（読むだけ）。"""
         if self._sorter is None:
             raise RuntimeError("先にお手本を覚えてください")
+        self._activity("Outlook から届いたメールを読んでいます…")
         mails = self._outlook(lambda o: o.read(self._folder, limit=50, store=self._store))
         with self._lock:
             self._last = {m.entry_id: (m.subject, m.body, m.flagged) for m in mails}
             out = []
-            for m in mails:
+            for n, m in enumerate(mails, 1):
+                if n % 5 == 1:
+                    self._activity(f"提案を計算しています（{n} / {len(mails)} 通）…")
                 vec = self._sorter.vector(m.subject, m.body)
                 ranked = self._sorter.rank(vec)
                 top = ranked[0]
@@ -211,7 +232,8 @@ class Api:
 
         def work(o: OutlookMover):
             done, failed = [], 0
-            for i, f in pairs:
+            for n, (i, f) in enumerate(pairs, 1):
+                self._activity(f"Outlook でメールを移しています（{n} / {len(pairs)} 通）…")
                 try:
                     o.move(i, f, store=self._store)
                     done.append((i, f))
@@ -226,6 +248,7 @@ class Api:
                 self._examples.setdefault(f, []).append((subject, body))
                 self._flags.setdefault(f, []).append(flagged)
             if done:
+                self._activity("お手本を覚え直しています…")
                 self._sorter.learn(self._examples)  # まとめて移したメールも、ここで新しいお手本になる
                 self._build_importance()
         info = {"count": len(done), "failed": failed}
@@ -248,7 +271,9 @@ class Api:
         def work(o: OutlookMover):
             o.folder(folder, self._store)  # 無いフォルダなら、ここで止まる（1通も移さない）
             moved, failed = 0, 0
-            for i in ids:
+            for n, i in enumerate(ids, 1):
+                if n % 5 == 1:
+                    self._activity(f"Outlook で配信メールを移しています（{n} / {len(ids)} 通）…")
                 try:
                     o.move(i, folder, store=self._store)
                     moved += 1
@@ -276,11 +301,13 @@ class Api:
             raise ValueError(f"「{folder}」は振り分け先ではありません")
         if entry_id not in self._last:
             raise LookupError("そのメールは、いまの一覧にありません")
+        self._activity(f"Outlook でメールを「{folder}」へ移しています…")
         self._outlook(lambda o: o.move(entry_id, folder, store=self._store))
         subject, body, flagged = self._last.pop(entry_id)
         with self._lock:
             self._examples.setdefault(folder, []).append((subject, body))
             self._flags.setdefault(folder, []).append(flagged)
+            self._activity("お手本を覚え直しています…")
             self._sorter.learn(self._examples)  # 選び直したメールも、ここで新しいお手本になる
             self._build_importance()
         moved = {"subject": subject, "folder": folder}
@@ -423,8 +450,8 @@ def main() -> None:
         else:
             Path(args.json).write_text(text + "\n", encoding="utf-8")
         return
-    webview.create_window("メール仕分け", html=page(), js_api=api,
-                          width=1180, height=760, min_size=(760, 520))
+    api._window = webview.create_window("メール仕分け", html=page(), js_api=api,
+                                        width=1180, height=760, min_size=(760, 520))
     webview.start()
 
 

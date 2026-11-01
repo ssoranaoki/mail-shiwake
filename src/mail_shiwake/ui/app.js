@@ -4,7 +4,21 @@
   // フォルダの色は、振り分け先の並び順で決める（どんな名前のフォルダでも色分けされるように）
   const PALETTE = ["#D55E00", "#0072B2", "#009E73", "#B36B00", "#CC79A7", "#56B4E9", "#7a5195", "#5b6670"];
   let order = [];
-  let flagNote = ""; // 旗付きのお手本が足りないときの案内
+  let flagNote = "";
+  // いま何をしているか（ボタンの横）。begin で出し、end で消す。途中の文は Python が window.setActivity で替える
+  let busy = 0;
+  function begin(text) {
+    busy += 1;
+    $("activity-text").textContent = text;
+    $("activity").hidden = false;
+  }
+  function end() {
+    busy = Math.max(0, busy - 1);
+    if (!busy) $("activity").hidden = true;
+  }
+  window.setActivity = (text) => {
+    if (busy) $("activity-text").textContent = text;
+  }; // 旗付きのお手本が足りないときの案内
   const $ = (id) => document.getElementById(id);
   const color = (name) => { const i = order.indexOf(name); return i < 0 ? "#5b6670" : PALETTE[i % PALETTE.length]; };
   const ICON_FOLDER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h6l2 2h10v10H3z"/></svg>';
@@ -134,8 +148,11 @@
       go.disabled = !pick.value;
     };
     if (folderList) fill(folderList);
-    else window.pywebview.api.folder_choices().then((d) => { folderList = d.folders; fill(folderList); })
-      .catch(() => { pick.options[0].text = "フォルダを読めませんでした"; });
+    else {
+      begin("Outlook のフォルダを読んでいます…");
+      window.pywebview.api.folder_choices().then((d) => { folderList = d.folders; fill(folderList); })
+        .catch(() => { pick.options[0].text = "フォルダを読めませんでした"; }).finally(end);
+    }
     pick.addEventListener("change", () => (go.disabled = !pick.value));
     const count = el("span", "cnt");
     const right = el("div", "bulk-right");
@@ -175,7 +192,9 @@
     g.querySelectorAll("button, select, input").forEach((x) => (x.disabled = true));
     $("status").textContent = `配信メール ${ids.length} 通を「${folder}」へ移しています…`;
     try {
-      const data = await window.pywebview.api.move_bulk(ids, folder);
+      begin("配信メールを移しています…");
+      let data;
+      try { data = await window.pywebview.api.move_bulk(ids, folder); } finally { end(); }
       showFolders(data.folders);
       const r = data.bulkMoved;
       const msg = `配信メール ${r.count} 通を「${r.folder}」へ移しました。` + (r.failed ? `${r.failed} 通は移せませんでした。` : "");
@@ -227,7 +246,9 @@
     document.querySelectorAll("#mails button, #mails select, #mails input, #main-actions button").forEach((x) => (x.disabled = true));
     $("status").textContent = `${moves.length} 通を移しています…`;
     try {
-      const data = await window.pywebview.api.move_many(moves);
+      begin("メールを移しています…");
+      let data;
+      try { data = await window.pywebview.api.move_many(moves); } finally { end(); }
       showFolders(data.folders);
       const r = data.manyMoved;
       const msg = `${r.count} 通を移しました。` + (r.failed ? `${r.failed} 通は移せませんでした。` : "") + "移したメールも、これからはお手本になります。";
@@ -249,7 +270,9 @@
     li.querySelectorAll("button, select").forEach((x) => (x.disabled = true));
     $("status").textContent = `「${m.subject}」を「${folder}」へ移しています…`;
     try {
-      const data = await window.pywebview.api.move(m.id, folder);
+      begin("メールを移しています…");
+      let data;
+      try { data = await window.pywebview.api.move(m.id, folder); } finally { end(); }
       showFolders(data.folders);
       if (data.listError) {
         li.remove(); // 移すのはできている。一覧の読み直しだけ失敗した
@@ -273,7 +296,9 @@
     $("picker-save").disabled = true;
     dlg.showModal();
     try {
-      const data = await window.pywebview.api.folder_choices();
+      begin("Outlook のフォルダを読んでいます…");
+      let data;
+      try { data = await window.pywebview.api.folder_choices(); } finally { end(); }
       list.textContent = "";
       if (!data.folders.length) {
         list.textContent = "選べるメールのフォルダがありません。Outlook でフォルダを作ってから、もう一度開いてください。";
@@ -302,7 +327,8 @@
       return;
     }
     try {
-      await window.pywebview.api.save_targets(targets);
+      begin("振り分け先を保存しています…");
+      try { await window.pywebview.api.save_targets(targets); } finally { end(); }
       $("picker").close();
       load();
     } catch (e) {
@@ -311,6 +337,7 @@
   }
 
   async function load() {
+    begin("お手本を覚えています…");
     $("learn").disabled = true;
     $("choose").disabled = false;
     try {
@@ -332,6 +359,7 @@
       $("status").textContent = `うまく読めませんでした：${e && e.message ? e.message : e}`;
     } finally {
       $("learn").disabled = false;
+      end();
     }
   }
 

@@ -18,6 +18,11 @@ button { font: inherit; cursor: pointer; }
 .primary { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font-weight: 700; }
 .primary:disabled { opacity: .6; cursor: default; }
 .offline { display: inline-flex; align-items: center; gap: 6px; background: var(--ok-soft); color: var(--ok); border: 1px solid #b9dfc6; border-radius: 999px; padding: 3px 12px; font-size: .88rem; font-weight: 700; }
+.activity { display: inline-flex; align-items: center; gap: 8px; background: var(--accent-soft); color: var(--accent); border: 1px solid #c9daf0; border-radius: 999px; padding: 3px 12px; font-size: .88rem; font-weight: 700; }
+.activity[hidden] { display: none; }
+.spin { width: 12px; height: 12px; border: 2px solid #c9daf0; border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; border-top-color: var(--accent); } }
 .offline .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
 
 .main { flex: 1; display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
