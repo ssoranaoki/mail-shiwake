@@ -19,8 +19,11 @@
 
 ### A. exe で入れる（Windows）
 
-1. [Releases](../../releases) から `mail-shiwake-<版>-windows.zip` をダウンロードして展開します
-2. 中の `mail-shiwake.exe` をダブルクリックします
+1. [Releases](../../releases) から `mail-shiwake-<版>-windows.zip` をダウンロードします
+2. 展開する前に、zip を右クリック →「プロパティ」→「全般」の下の「許可する」にチェックを付けて「OK」を押します
+3. zip を展開し、中の `mail-shiwake.exe` をダブルクリックします
+
+いまの exe には電子署名（コード署名）が付いていないため、2 をしないと、起動するときに「発行元：不明」の警告が出ます。「Windows によって PC が保護されました」と出たときは、「詳細情報」を押してから「実行」を押します。署名は、オープンソース向けの無料の署名（SignPath Foundation）に申し込んで、付ける予定です。
 
 ### B. uv で入れる
 
