@@ -25,6 +25,7 @@ import numpy as np
 from .cache import CachedEmbedder
 from .embedder import REVISION, Embedder
 from .importance import MIN_FLAGGED, Importance
+from . import newmail
 from .mover import OutlookMover
 from .sorter import Sorter, mail_text
 from .trust import Trust
@@ -583,6 +584,11 @@ def main() -> None:
     api._window = webview.create_window("メール仕分け", html=page(), js_api=api,
                                         width=1180, height=760, min_size=(760, 520),
                                         maximized=True)  # 起動したときは画面いっぱい（2026-11-01 ユーザー指示）。元に戻すと 1180×760
+
+    def arrived() -> None:  # Outlook の新着の知らせ（NewMailEx）→ 窓に「届いたかも」と伝える。読み直すのは窓
+        api._window.run_js("window.mailArrived && window.mailArrived()")
+
+    newmail.start(arrived)
     webview.start()
 
 

@@ -509,27 +509,45 @@
     const a = document.activeElement;
     return busy > 0 || $("picker").open || (a !== null && a.tagName === "SELECT");
   }
-  // 新しく届いたメールを1分ごとに見る。あれば一覧を出し直し、「自動で移す」がオンなら条件を満たすメールを移す
-  const WATCH_MS = 60000;
-  async function watchNew() {
+  // 新しく届いたメールを見つけたら、一覧を出し直し、「自動で移す」がオンなら条件を満たすメールを移す。
+  // 見つけ方は2つ: Outlook の知らせ（NewMailEx、すぐ。Python の newmail.py が window.mailArrived を呼ぶ）と、
+  // 1分ごとの見張り（知らせが鳴らないアカウントや、取りこぼしを拾う）
+  let checking = false;
+  async function checkNew() {
+    if ($("auto-toggle").disabled) return false; // まだ最初の読み込みが終わっていない
+    if (checking || userIsEditing()) return null; // 読んでいる最中・操作の途中は、あとでもう一度（知らせを取りこぼさない）
+    checking = true;
     try {
-      if (!$("auto-toggle").disabled && !userIsEditing()) {
-        const { count } = await window.pywebview.api.new_mail_count();
-        if (count > 0 && !userIsEditing()) {
-          begin(`新しく届いたメール ${count} 通に提案を付けています…`);
-          let data;
-          try { data = await window.pywebview.api.mails(); } finally { end(); }
-          showMails(data, true);
-          if (data.autoMove.enabled && data.mails.some((m) => m.autoReady)) await runAuto();
-        }
+      const { count } = await window.pywebview.api.new_mail_count();
+      if (count > 0 && !userIsEditing()) {
+        begin(`新しく届いたメール ${count} 通に提案を付けています…`);
+        let data;
+        try { data = await window.pywebview.api.mails(); } finally { end(); }
+        showMails(data, true);
+        if (data.autoMove.enabled && data.mails.some((m) => m.autoReady)) await runAuto();
       }
+      return true;
     } catch (e) {
-      // Outlook が閉じているときなどは、次の回にまた見る
+      return false; // Outlook が閉じているときなどは、次の回にまた見る
     } finally {
-      setTimeout(watchNew, WATCH_MS);
+      checking = false;
     }
   }
+  const WATCH_MS = 60000;
+  async function watchNew() {
+    try { await checkNew(); } finally { setTimeout(watchNew, WATCH_MS); }
+  }
   setTimeout(watchNew, WATCH_MS);
+  // Outlook の知らせ。続けて何通も届くことがあるので、最後の知らせから少し待ってから1回だけ読む。
+  // 知らせは Outlook のルールより前に鳴るので、待つ間にルールで別のフォルダへ移されたメールは数えない
+  let arrivedTimer = null;
+  window.mailArrived = () => {
+    clearTimeout(arrivedTimer);
+    arrivedTimer = setTimeout(async function retry() {
+      const done = await checkNew();
+      if (done === null) arrivedTimer = setTimeout(retry, 3000); // 移している最中などは、終わってから
+    }, 1500);
+  };
 
   $("refresh").addEventListener("change", async (e) => {
     const minutes = Number(e.target.value);
