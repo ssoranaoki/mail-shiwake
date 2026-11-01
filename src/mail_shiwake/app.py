@@ -293,6 +293,13 @@ class Api:
         result.update({"manyMoved": info, "folders": self._folders()})
         return result
 
+    def new_mail_count(self) -> dict:
+        """届いたメールのフォルダに、いまの一覧に無いメールが何通あるか（窓が1分ごとに見る。本文は読まない）。"""
+        if self._sorter is None:
+            return {"count": 0}
+        ids = self._outlook(lambda o: o.entry_ids(self._folder, limit=50, store=self._store))
+        return {"count": sum(i not in self._last for i in ids)}
+
     def open_mail(self, entry_id: str) -> None:
         """届いたメールを Outlook の窓で開く（迷ったときに中身を読むため）。"""
         if entry_id not in self._last:

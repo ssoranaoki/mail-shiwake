@@ -479,6 +479,29 @@
       || document.querySelector(".card.rechosen") !== null
       || document.querySelector("#mails input[type=checkbox]:not(:checked), #bulk input[type=checkbox]:not(:checked)") !== null;
   }
+  // 新しく届いたメールを1分ごとに見る。あれば一覧を出し直し、「自動で移す」がオンなら条件を満たすメールを移す
+  const WATCH_MS = 60000;
+  async function watchNew() {
+    try {
+      if (!$("auto-toggle").disabled && !userIsEditing()) {
+        const { count } = await window.pywebview.api.new_mail_count();
+        if (count > 0 && !userIsEditing()) {
+          begin(`新しく届いたメール ${count} 通に提案を付けています…`);
+          let data;
+          try { data = await window.pywebview.api.mails(); } finally { end(); }
+          showMails(data);
+          $("status").textContent = `新しく届いたメール ${count} 通に提案を付けました。`;
+          if (data.autoMove.enabled && data.mails.some((m) => m.autoReady)) await runAuto();
+        }
+      }
+    } catch (e) {
+      // Outlook が閉じているときなどは、次の回にまた見る
+    } finally {
+      setTimeout(watchNew, WATCH_MS);
+    }
+  }
+  setTimeout(watchNew, WATCH_MS);
+
   $("refresh").addEventListener("change", async (e) => {
     const minutes = Number(e.target.value);
     await window.pywebview.api.set_refresh(minutes);

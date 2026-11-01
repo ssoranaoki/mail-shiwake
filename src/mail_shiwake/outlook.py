@@ -151,6 +151,18 @@ class OutlookReader:
             mails.append(self._mail(item))
         return mails
 
+    def entry_ids(self, path: str = "", limit: int = 50, store: str | None = None) -> list[str]:
+        """フォルダのメールの EntryID だけを、新しい順に最大 limit 通返す（本文は読まないので軽い）。"""
+        items = self.folder(path, store).Items
+        items.Sort("[ReceivedTime]", True)
+        ids: list[str] = []
+        for item in items:
+            if len(ids) >= limit:
+                break
+            if item.Class == OL_MAIL:
+                ids.append(item.EntryID)
+        return ids
+
     def flagged(self, paths: list[str], scan: int = 300, limit: int = 50, store: str | None = None) -> list[Mail]:
         """フォルダの新しいメール scan 通ずつから、旗の付いたものを集め、新しい順に最大 limit 通返す。"""
         found: list[Mail] = []
