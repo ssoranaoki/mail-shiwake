@@ -84,7 +84,12 @@
       const text = el("div", "text");
       const subj = el("p", "subject");
       if (m.important) subj.append(el("span", "important", "★ 大事かも"));
-      subj.append(m.subject || "（件名なし）");
+      // 件名を押すと、Outlook でそのメールを開く（中身を読んでから判断できるように）
+      const title = el("button", "subject-link", m.subject || "（件名なし）");
+      title.type = "button";
+      title.title = "Outlook で開く";
+      title.addEventListener("click", () => openMail(m));
+      subj.append(title);
       text.append(subj, el("p", "snippet", m.snippet));
       if (m.important) li.classList.add("is-important");
       const right = el("div", "right");
@@ -100,7 +105,13 @@
         av.style.background = color(pick.value);
       });
       sug.append(pick);
-      if (m.unsure) sug.append(el("span", "unsure", `迷っています：${m.second} かも`));
+      if (m.unsure) {
+        sug.append(el("span", "unsure", `迷っています：${m.second} かも`));
+        const open = el("button", "open-mail", "Outlook で開く");
+        open.type = "button";
+        open.addEventListener("click", () => openMail(m));
+        sug.append(open);
+      }
       const move = el("button", "move", "移す");
       move.type = "button";
       move.addEventListener("click", () => moveMail(m, pick.value, li));
@@ -298,6 +309,18 @@
     } catch (e) {
       btn.disabled = false;
       $("status").textContent = `元に戻せませんでした：${e && e.message ? e.message : e}`;
+    }
+  }
+
+  async function openMail(m) {
+    begin("Outlook でメールを開いています…");
+    try {
+      await window.pywebview.api.open_mail(m.id);
+      $("status").textContent = `「${m.subject}」を Outlook で開きました。読んだら、こちらでフォルダを選んで「移す」を押してください。`;
+    } catch (e) {
+      $("status").textContent = `開けませんでした：${e && e.message ? e.message : e}`;
+    } finally {
+      end();
     }
   }
 

@@ -84,6 +84,13 @@ class OutlookReader:
                 return root
         raise LookupError(f"「{name}」という名前のデータファイルが Outlook にありません")
 
+    def open(self, entry_id: str, path: str = "", store: str | None = None) -> None:
+        """メールを Outlook のいつもの窓で開く（MailItem.Display。読むだけで、移したり書きかえたりしない）。"""
+        item = self._ns.GetItemFromID(entry_id, self.folder(path, store).StoreID)
+        if item.Class != OL_MAIL:
+            raise ValueError("メールではないものは開きません")
+        item.Display(False)  # False: Outlook の窓を開いたまま、メール仕分けの窓も使える
+
     def mail_folders(self, store: str | None = None, max_depth: int = 3) -> list[dict]:
         """振り分け先に選べるメールのフォルダの一覧（path・name・depth・count）。
 

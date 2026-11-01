@@ -290,6 +290,13 @@ class Api:
         result.update({"manyMoved": info, "folders": self._folders()})
         return result
 
+    def open_mail(self, entry_id: str) -> None:
+        """届いたメールを Outlook の窓で開く（迷ったときに中身を読むため）。"""
+        if entry_id not in self._last:
+            raise LookupError("そのメールは、いまの一覧にありません")
+        self._activity("Outlook でメールを開いています…")
+        self._outlook(lambda o: o.open(entry_id, self._folder, store=self._store))
+
     def set_auto_move(self, enabled: bool) -> dict:
         """「自動で移す」のスイッチ。設定ファイルに覚える。"""
         s = load_settings()
